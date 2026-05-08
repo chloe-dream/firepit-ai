@@ -230,7 +230,9 @@ The smallest version of Firepit that solves the core pain.
   - **Resume Last** — relaunch agent with `--continue` or equivalent
   - **Open in Explorer** — `explorer.exe <project_path>`
   - **Open External Shell** — Windows Terminal if available (`wt.exe -d`), else `powershell.exe -NoExit -Command "Set-Location ..."`
-- **Configuration** — JSON file in `%APPDATA%\Firepit` storing projects root path, agent CLI command per project (default `claude`), theme, recent sessions.
+- **Quick-links** — per-project URL buttons in the toolbar (or dropdown if the count grows). Globally templated (`{projectName}` and friends), overridable per project, opened in the system browser via `Process.Start`. The same data model is intentionally compatible with the V2 sub-tab cockpit so no migration is needed when sub-tabs land.
+- **MCP server registry** ("kindling") — global catalog of Model-Context-Protocol servers, activated per project with optional argument / env / header overrides. The active set is translated to the agent's expected format by the adapter (e.g. `claude mcp add` invocations or `.claude/settings.json` writes for Claude Code) at session start. Registry is agent-agnostic; adapters know how to project it.
+- **Configuration** — JSON file in `%APPDATA%\Firepit` storing projects root path, agent CLI command per project (default `claude`), theme, recent sessions, the MCP registry, and the quick-link templates.
 - **Single-instance** behavior — clicking the launcher when Firepit is already running brings it forward, doesn't spawn a second copy.
 
 ### Explicitly Out of Scope for V1
@@ -244,6 +246,31 @@ The smallest version of Firepit that solves the core pain.
 - Telemetry, crash reporting, update mechanism
 - Any AI features beyond hosting agents
 
+### MCP Server Registry — "Kindling"
+
+The pain: running multiple agent-driven projects means configuring the same MCP servers per project, by hand, again and again — sometimes with per-project arguments (e.g. one Fishbowl invocation per project, distinguished only by an argument), often with locally-pathed binaries that drift out of sync between projects. Today every developer doing multi-project agent work hand-manages this; there is no clean tool.
+
+Firepit makes this a first-class concept. A central registry lives in the global settings (think of it as the *kindling* you stack to fuel each session); projects activate a subset, optionally with overrides. The agent adapter (Claude Code in V1) is responsible for translating the active set into the agent's expected format at session start. The registry itself is agent-agnostic: a Cursor or Aider adapter would project the same data into its own configuration shape.
+
+Each registry entry includes:
+
+- `id` (unique short string, e.g. `fishbowl`, `grok-image`, `tavily-search`)
+- `displayName` and `description` for the UI
+- `transport` — one of `stdio`, `http`, `sse`
+- For stdio: `command`, default `args`, default `env`
+- For http/sse: `url`, default `headers`, optional `auth` reference
+- Optional `secrets` — references to environment variables or Windows Credential Manager entries; never raw secret text. See *Configuration* below.
+
+Per-project activation lists registered ids, with optional override sections that can adjust args, env, or headers without forking the registry entry.
+
+The brand voice calls this *kindling* in user-facing strings ("add kindling", "this project's kindling"). Code identifiers stay neutral (`McpServerRegistry`, `IMcpRegistry`).
+
+### Quick-Links per Project
+
+While working in a project the author constantly needs to glance at project-relevant external pages — the project's Fishbowl knowledge base, GitHub repo, deployed app, CI dashboard. Today: alt-tab to a browser, find the right tab. Quick-links collapse that friction: per-project URL buttons in the tab toolbar (or a dropdown when the count grows), one click to the system browser.
+
+Globally defined link templates use `{projectName}` (and similar) variables; per-project lists override or disable the templated defaults. Each entry is `{ name, url, target, icon? }`. In V1 the only legal `target` value is `"external"` — the link opens in the system browser. The data shape is intentionally chosen to support V2's sub-tab cockpit (see *V2 §Project Sub-Tabs*) without a schema change: the same entries become hostable panes when `target` gains the `"subTab"` value.
+
 ### Success Criteria for V1
 
 > The author replaces three permanently-open PowerShell windows with one Firepit window and never goes back.
@@ -255,6 +282,14 @@ If V1 doesn't achieve this, V2 is irrelevant.
 ## V2: The Workshop Around the Fire
 
 V2 adds the things you reach for *while* working with an agent. The terminal is still the center; V2 is the surrounding workshop.
+
+### Project Sub-Tabs (the cockpit)
+
+The endgame for what a Firepit project tab is. Today it hosts one terminal. In V2 it becomes a cockpit: the terminal is one sub-tab; the project's Fishbowl page is another; the GitHub repo is another; the deployed app is another. File browser, markdown viewer, image viewer (also V2) live as sub-tabs too. Switch project, the entire sub-tab set switches with it.
+
+Why not V1: sub-tabs introduce a layout paradigm shift — split orientation, keyboard navigation, focus management, persistence of pane state. Answering those without first dogfooding V1 means designing on speculation. After three days of V1 use the author will know which sub-tabs they actually want and how to navigate between them. Before that, every choice is a guess.
+
+V1 prepares the ground only by making the quick-link data model sub-tab-friendly (the `target` field exists; only `"external"` is legal in V1; `"subTab"` becomes legal in V2). The terminal-view interface (`ITerminalView`) is conceptually a strict subset of what V2's pane interface (`IProjectPaneView`) will need; the V1 interface is shipped as-is and generalized in V2 — no V1 scaffolding for hypothetical future panes.
 
 ### File Browser
 
@@ -432,19 +467,57 @@ Single JSON file at `%APPDATA%\Firepit\settings.json`:
   "shells": {
     "preferred": "wt"   // "wt" | "powershell" | "pwsh"
   },
+  "mcpServers": {
+    // The kindling registry. Keyed by id.
+    "fishbowl": {
+      "displayName": "Fishbowl",
+      "description": "Personal memory and notes",
+      "transport": "http",
+      "url": "https://localhost:7180/mcp",
+      "headers": { "Authorization": "Bearer ${cred:firepit/fishbowl-token}" }
+    },
+    "grok-image": {
+      "displayName": "Grok Image",
+      "transport": "stdio",
+      "command": "C:\\Tools\\grok-image-mcp\\grok-image-mcp.exe",
+      "env": { "GROK_API_KEY": "${env:GROK_API_KEY}" }
+    }
+  },
+  "quickLinks": [
+    // Global templated defaults. Per-project entries can extend or disable these.
+    { "name": "GitHub",   "url": "https://github.com/chloe-dream/{projectName}", "target": "external" },
+    { "name": "Fishbowl", "url": "https://localhost:7180/p/{projectName}",       "target": "external" }
+  ],
   "projects": [
     // optional manual entries; auto-discovered projects don't need to be listed
     {
       "name": "tinderbox",
       "path": "D:\\Code\\tinderbox",
       "agentCommand": "claude",
-      "agentArgs": ["--model", "sonnet"]
+      "agentArgs": ["--model", "sonnet"],
+      "mcpServers": ["fishbowl", "grok-image"],   // active registry ids
+      "mcpOverrides": {
+        "fishbowl": { "headers": { "X-Project": "tinderbox" } }
+      },
+      "quickLinks": [
+        // disables the global "Fishbowl" template for this project, replaces with a specific URL
+        { "name": "Fishbowl", "url": "https://localhost:7180/p/tinderbox-staging", "target": "external" }
+      ]
     }
   ]
 }
 ```
 
 Default values are baked in; the file is created on first launch only if the user changes something.
+
+### Secret References
+
+Registry entries (and override sections) never store raw secrets. Secrets are referenced via templated tokens that are resolved at session start, not at file-load time:
+
+- `${env:NAME}` — read from the current process's environment variable `NAME` at resolve time.
+- `${cred:firepit/<key>}` — read from Windows Credential Manager (target `firepit/<key>`) via the Credentials API.
+
+Tokens that fail to resolve cause the affected MCP entry to be skipped for that session, with a non-blocking warning surfaced in the UI. DPAPI-encrypted in-file secret storage is a V1.1 candidate if reference-based handling proves clumsy in practice.
 
 ---
 
@@ -478,5 +551,5 @@ Firepit stands on shoulders:
 
 ---
 
-*Document version: 0.1 — initial spec*
+*Document version: 0.2 — adds MCP server registry, quick-links, project sub-tab vision*
 *Status: pre-development, design phase*

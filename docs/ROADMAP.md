@@ -184,19 +184,26 @@ ignitingTimeoutMs  = 10000
 
 ---
 
-## M4 — Toolbar Actions
+## M4 — Toolbar Actions + Quick-Links
 
-**Goal:** The four V1 toolbar actions work: Rekindle, Resume Last, Open in Explorer, Open External Shell. Each is reachable from the active tab's toolbar.
+**Goal:** The four core V1 toolbar actions plus per-project quick-link buttons all work from the active tab. Quick-links are stateless URL openers in M4 (data-driven from M5 onwards).
 
 **Deliverables**
 
 - `Firepit/Views`:
-  - `TabToolbar` — four buttons with brand-language tooltips ("Rekindle this session", "Resume last session", "Open in Explorer", "Open external shell")
+  - `TabToolbar` — four built-in buttons with brand-language tooltips ("Rekindle this session", "Resume last session", "Open in Explorer", "Open external shell")
+  - Quick-link region in the toolbar — a horizontal strip of buttons that collapses into a dropdown when more than four entries
 - Action handlers:
   - **Rekindle**: tear down the current session (kill child, dispose PTY), start a new one with the same `ProjectContext`. No `--continue`.
   - **Resume Last**: tear down + restart with `AgentLaunchOptions(Resume: true)` → adapter adds `--continue`.
   - **Open in Explorer**: `Process.Start("explorer.exe", projectPath)`.
   - **Open External Shell**: try `Process.Start("wt.exe", $"-d {projectPath}")`; on failure, fall back to `powershell.exe -NoExit -Command "Set-Location '<path>'"`.
+- Quick-link service:
+  - `Firepit.Core.QuickLinks.IQuickLinkService` per ARCHITECTURE §10
+  - Resolution merges global templates with per-project lists; `{projectName}` and `{projectPath}` substitution at click time
+  - `Open()` calls `Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })`
+  - **M4 hardcodes** an in-memory default list (`GitHub`, `Fishbowl`) for dogfooding; M5 wires the same shape to settings.json
+  - `QuickLinkEntry.Target` enum exists with `External` as the only legal V1 value; any other value renders the button disabled with a "(V2)" tooltip
 - Dead-tab UX:
   - Dead tabs show a center-of-tab "rekindle" affordance ("This session went out. Click to rekindle.")
   - Tab toolbar's Rekindle button is enabled in any state (Burning/Embers/Dead); confirmation dialog only when killing a Burning session
@@ -208,19 +215,22 @@ ignitingTimeoutMs  = 10000
 - Open in Explorer → Explorer window opens at the project path
 - Open External Shell → on a system with `wt.exe`, opens Windows Terminal in the project folder; on a system without, opens PowerShell with the path set
 - Killing a Burning session prompts for confirmation
+- Quick-links: clicking the GitHub button opens `https://github.com/<configuredOwner>/<projectName>` in the default browser; clicking Fishbowl opens the templated URL with `{projectName}` substituted
+- A quick-link with an unknown placeholder is shown disabled, hover tooltip names the missing variable
 
-**Out of scope:** session history dropdown (V2), session resume by ID (V2).
+**Out of scope:** session history dropdown (V2), session resume by ID (V2), quick-link sub-tab hosting (V2 §Project Sub-Tabs).
 
 ---
 
-## M5 — Configuration
+## M5 — Configuration Foundation
 
-**Goal:** Settings persist in `%APPDATA%\Firepit\settings.json` per ARCHITECTURE §7 and SPEC §Configuration. The hardcoded `projectsRoot` from M2 is now read from config.
+**Goal:** Settings persist in `%APPDATA%\Firepit\settings.json` per ARCHITECTURE §7 and SPEC §Configuration. The hardcoded `projectsRoot` from M2 and the in-memory quick-link list from M4 are now read from config.
 
 **Deliverables**
 
 - `Firepit.Core`:
   - `Settings`, `TabSettings`, `ShellsSettings`, `ProjectEntry` immutable records (System.Text.Json source-gen attributes for AOT-friendliness)
+  - `QuickLinkEntry` record (the schema defined in ARCHITECTURE §10.1) — read from config now, validated against the `Target` enum at load time
   - `Settings.Defaults` static
   - `ISettingsStore` interface; `JsonSettingsStore` implementation
 - First-launch behavior:
@@ -239,24 +249,60 @@ ignitingTimeoutMs  = 10000
 - Change projects root via the Settings dialog → file is created, change persists across restarts
 - Edit `tabs.activityIdleThresholdMs` by hand-editing the JSON → restart → new threshold takes effect (verified with the M3 hysteresis test)
 - Add a manual `projects[]` entry pointing to a folder outside `projectsRoot` → it appears in the sidebar
+- Add `quickLinks` entries to the JSON file → they appear in the toolbar after restart; per-project entries override global by name
 
-**Out of scope:** hot-reload on file change, settings migration, validation UI. Bad JSON: log warning, fall back to defaults, surface a non-blocking banner.
+**Out of scope:** hot-reload on file change, settings migration, validation UI. Bad JSON: log warning, fall back to defaults, surface a non-blocking banner. MCP registry data lives in this same file but is consumed in M6.
 
 ---
 
-## M6 — Single-Instance + Tab Restoration
+## M6 — MCP Server Registry & Per-Project Activation
+
+**Goal:** Projects can declare an active set of MCP servers from a global registry, and the Claude Code adapter projects that set into Claude's expected configuration at session start. Sessions launched in M6 actually have the activated MCP servers available to the agent.
+
+**Deliverables**
+
+- `Firepit.Core.Mcp`:
+  - `McpRegistryEntry`, `McpProjectActivation`, `McpOverride`, `ResolvedMcpServer` records per ARCHITECTURE §9.1
+  - `IMcpRegistry` service per §9.2 with `JsonBackedMcpRegistry` implementation reading from the same `settings.json` foundation introduced in M5
+- `Firepit.Core.Secrets`:
+  - `ISecretResolver` with two providers: `EnvironmentSecretProvider` (`${env:NAME}`) and `CredentialManagerSecretProvider` (`${cred:firepit/<key>}`)
+  - The Credential Manager P/Invoke (`CredRead`) lives in `Firepit.Process` and is wired in via DI
+- `Firepit.Adapters.ClaudeCode`:
+  - `ClaudeCodeMcpProjector : IAgentMcpProjector` — translates a `ResolvedMcpServer` list into Claude's expected format. Implementation choice (write `.claude/mcp.json` vs. run `claude mcp add` invocations) decided during M6 based on what Claude Code's CLI supports cleanly at the time. Document the choice in ARCHITECTURE §9.3.
+- Session lifecycle integration:
+  - On session start, before the agent is spawned, the projector applies the active MCP set for the project
+  - Resolution warnings (missing tokens, unrecognized ids) surface as a non-blocking banner in the tab; the session still launches
+  - Rekindle re-resolves (so secret rotation in Credential Manager picks up without a Firepit restart)
+- Settings UI (minimal):
+  - The settings JSON file is still the canonical edit surface for the registry. M6 ships a "View MCP Servers" panel that lists registry entries and shows which are active for the currently focused project — read-only. Editing happens by hand for V1; the panel proves the registry is loaded correctly.
+
+**Acceptance**
+
+- Add an MCP entry to `settings.json` (e.g. a stdio server that just echoes a tool list) → restart Firepit → the panel lists it
+- Activate the entry on a project → start a session → the agent sees the MCP server's tools (verified by the agent's own `tools` listing or equivalent)
+- Override the entry's `args` per project → restart that project's session → the override takes effect (verified by inspecting what Claude Code received)
+- Reference a `${cred:firepit/test-token}` token; provision the credential via `cmdkey /add:firepit/test-token /user:firepit /pass:<value>`; restart session → token resolved into the request
+- Provision NO credential → restart session → entry skipped, banner shows the resolution warning, session still starts
+
+**Out of scope:** registry editing UI (V1.1), public MCP marketplace discovery (V1.1+), DPAPI in-file secrets (V1.1), tool-list pre-validation (V1.1).
+
+**Brand language:** the panel is labeled *"Kindling"* in user-facing copy; tooltips read "the kindling you stack to start each fire". Code identifiers stay neutral (`McpRegistryPanel`, `McpProjectActivation`).
+
+---
+
+## M7 — Single-Instance + Tab Restoration
 
 **Goal:** Launching `firepit.exe` while it's already running brings the existing window forward. Tabs that were open at last close are restored on next launch (per opt-in setting).
 
 **Deliverables**
 
 - `Firepit/Bootstrap`:
-  - Named-pipe singleton per ARCHITECTURE §9
+  - Named-pipe singleton per ARCHITECTURE §11
   - On second launch: connect to pipe, send `{ "command": "focus" }`, exit with success
   - On first launch: become the pipe server; main window subscribes to pipe messages
   - Pipe protocol supports `{ "command": "summon", "project": "<name>" }` even if no CLI yet uses it (V2)
 - Tab restoration:
-  - `state.json` in `%LOCALAPPDATA%\Firepit\` lists open tabs by `(projectName, lastSessionResumable: bool)`
+  - `state.json` in `%LOCALAPPDATA%\Firepit\` is a versioned schema (`{ "version": 1, "tabs": [{ "projectName": "...", "lastSessionResumable": true }] }`) — see ARCHITECTURE §17.3
   - Saved on graceful shutdown; loaded on startup if `tabs.persistAcrossRestarts` is true
   - Restored tabs auto-summon their agent (with `--continue` if `lastSessionResumable`)
 
@@ -270,7 +316,7 @@ ignitingTimeoutMs  = 10000
 
 ---
 
-## M7 — Polish + Dogfood Hardening
+## M8 — Polish + Dogfood Hardening
 
 **Goal:** Three full days of the author using Firepit as the only entrypoint to Claude Code. Bugs found during dogfooding either fixed in this milestone or moved to a V1.1 backlog.
 
@@ -279,7 +325,7 @@ ignitingTimeoutMs  = 10000
 - README with installation, configuration, screenshots, and the brand-voice tone
 - LICENSE file (MIT, per SPEC §License Direction unless changed)
 - A first GitHub Release (`v0.1.0`) with the published archive attached
-- Logging fully wired per ARCHITECTURE §10
+- Logging fully wired per ARCHITECTURE §12
 - Crash safety pass: any unhandled exception → log + non-blocking error toast in the UI, never a silent crash
 - Performance pass: confirm the bridge keeps up under heavy output (large `git log`, big diff). If not, switch to the host-object path per ARCHITECTURE §3.3 — this is the only milestone allowed to make that switch.
 - Visual pass: dark theme tokens applied consistently, monospace font verified, indicator colors cohesive with brand
@@ -308,15 +354,16 @@ These apply throughout — call them out in PRs/commits:
 
 Listed in dependency order so M2-onwards can leave hooks where helpful, not so V2 starts before V1 is done:
 
-1. File browser pane (tree + grid toggle, FileSystemWatcher refresh)
-2. Markdown viewer (in-pane, mermaid, syntax-highlighted code, no editing)
-3. Image viewer (with EXIF, zoom/pan)
-4. Embedded PowerShell (second pane, reuses ConPTY infrastructure)
-5. Session history dropdown (`--resume <id>` per adapter)
-6. Scrollback restoration (`xterm-addon-serialize`)
+1. **Project sub-tabs (the cockpit)** — the layout shift that turns each project tab into a multi-pane workspace; the items below are panes inside it. Quick-link entries with `target = "subTab"` become hostable here. See SPEC §V2 *Project Sub-Tabs* and ARCHITECTURE §17.1.
+2. File browser pane (tree + grid toggle, FileSystemWatcher refresh)
+3. Markdown viewer (in-pane, mermaid, syntax-highlighted code, no editing)
+4. Image viewer (with EXIF, zoom/pan)
+5. Embedded PowerShell (second pane, reuses ConPTY infrastructure)
+6. Session history dropdown (`--resume <id>` per adapter)
+7. Scrollback restoration (`xterm-addon-serialize`)
 
 V3 (image AI) is deliberately not detailed here. It will get its own roadmap when V2 is in active personal use.
 
 ---
 
-*Document version: 0.1 — initial roadmap*
+*Document version: 0.2 — adds quick-links to M4, splits configuration foundation (M5) from MCP registry (M6), promotes project sub-tabs to top of V2*

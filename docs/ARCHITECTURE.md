@@ -321,7 +321,154 @@ The discovery service iterates `projectsRoot` one level deep and, for each child
 
 ---
 
-## 9. Single-Instance Behavior
+## 9. MCP Server Registry
+
+The registry is a global catalog of MCP servers; projects opt into a subset and may override per server. The registry itself is agent-agnostic — each `IAgentAdapter` is responsible for translating the *active set for a given session* into whatever format the agent expects.
+
+### 9.1 Data Model
+
+```csharp
+public sealed record McpRegistryEntry(
+    string Id,
+    string DisplayName,
+    string? Description,
+    McpTransport Transport,
+    string? Command,                                     // stdio
+    IReadOnlyList<string> Args,                          // stdio
+    IReadOnlyDictionary<string, string?> Environment,    // stdio
+    string? Url,                                         // http | sse
+    IReadOnlyDictionary<string, string?> Headers);       // http | sse
+
+public enum McpTransport { Stdio, Http, Sse }
+
+public sealed record McpProjectActivation(
+    IReadOnlyList<string> ActiveIds,                     // registered ids active for this project
+    IReadOnlyDictionary<string, McpOverride> Overrides); // optional per-id overrides
+
+public sealed record McpOverride(
+    IReadOnlyList<string>? Args,                         // null = inherit registry default
+    IReadOnlyDictionary<string, string?>? Environment,
+    IReadOnlyDictionary<string, string?>? Headers);
+```
+
+Strings within `Args`, `Environment`, and `Headers` may contain reference tokens (`${env:NAME}`, `${cred:firepit/<key>}`) that are resolved at session start, not at config-load time.
+
+### 9.2 Service Surface
+
+```csharp
+public interface IMcpRegistry
+{
+    IReadOnlyList<McpRegistryEntry> All { get; }
+    McpRegistryEntry? Find(string id);
+    IReadOnlyList<ResolvedMcpServer> ResolveForProject(ProjectContext ctx, CancellationToken ct);
+}
+
+public sealed record ResolvedMcpServer(
+    string Id,
+    string DisplayName,
+    McpTransport Transport,
+    string? Command,
+    IReadOnlyList<string> Args,
+    IReadOnlyDictionary<string, string> Environment,     // tokens already resolved
+    string? Url,
+    IReadOnlyDictionary<string, string> Headers,
+    IReadOnlyList<string> ResolutionWarnings);           // failed-to-resolve tokens are reported, not thrown
+```
+
+`ResolveForProject` merges registry defaults with per-project overrides, resolves secret tokens, and returns the effective configuration. Entries with unresolved required tokens are dropped from the result and a warning is appended; the session still starts, the missing server is just absent.
+
+### 9.3 Adapter Contract
+
+```csharp
+public interface IAgentMcpProjector
+{
+    Task ApplyAsync(
+        ProjectContext ctx,
+        IReadOnlyList<ResolvedMcpServer> activeServers,
+        CancellationToken ct);
+}
+```
+
+Each `IAgentAdapter` provides an `IAgentMcpProjector`. For Claude Code in V1 the projector writes a session-local `.claude/mcp.json` (or runs `claude mcp add` invocations as a pre-launch step — implementation choice during M6). The shell never invokes Claude-specific knowledge directly.
+
+### 9.4 Secret References
+
+Two reference forms in V1:
+
+| Form | Resolution |
+|---|---|
+| `${env:NAME}` | `Environment.GetEnvironmentVariable("NAME")` at resolve time |
+| `${cred:firepit/<key>}` | Windows Credential Manager via `CredRead`, target `firepit/<key>`, `CRED_TYPE_GENERIC` |
+
+Implementation lives in `Firepit.Process` (Credential Manager P/Invoke) but is exposed via `Firepit.Core.Secrets.ISecretResolver` so other layers can mock it. Tokens may appear inside any string value of an entry or override; the resolver scans for them with a deliberately narrow regex (`\$\{(env|cred):[^}]+\}`) and refuses any unrecognized scheme.
+
+DPAPI-encrypted in-file secret storage is on the V1.1 candidate list. Plain-text secrets in `settings.json` are explicitly out of scope.
+
+### 9.5 Lifecycle
+
+The registry is loaded once at startup. Resolution happens **per session start** (not per launch of Firepit), so secret rotation in Credential Manager picks up on the next Rekindle without requiring a Firepit restart. The active set for a project is recomputed if the user edits the project's activation list during the session — the next Rekindle will use the new set.
+
+### 9.6 What's Out of Scope for V1
+
+- Discovery of MCP servers from a public marketplace
+- Auto-update of MCP server binaries
+- Schema validation of an MCP server's tool list before launch
+- DPAPI-encrypted in-file secret storage (V1.1 candidate)
+- A graphical registry editor — V1 ships the JSON file plus a minimal "open in editor" affordance
+
+---
+
+## 10. Quick Links
+
+A small feature with disproportionate value: per-project URL buttons in the toolbar that open in the system browser. Designed in V1 with the V2 sub-tab cockpit in mind so no schema change is needed when sub-tabs land.
+
+### 10.1 Data Model
+
+```csharp
+public sealed record QuickLinkEntry(
+    string Name,
+    string UrlTemplate,
+    QuickLinkTarget Target,                              // V1: only External is legal
+    string? Icon,
+    bool DisabledForProject);                            // per-project entries can disable a global default
+
+public enum QuickLinkTarget
+{
+    External,                                            // V1: opens in system browser
+    SubTab,                                              // V2+: hosts as a sub-tab
+}
+```
+
+### 10.2 Templating
+
+`QuickLinkEntry.UrlTemplate` may contain placeholders that are substituted at click time:
+
+| Placeholder | Source |
+|---|---|
+| `{projectName}` | `ProjectContext.Name` |
+| `{projectPath}` | `ProjectContext.Path` (URL-encoded if used in an `https://...` URL) |
+
+Unknown placeholders cause the link to be rendered as disabled with a tooltip ("missing variable: …") rather than firing a half-substituted URL.
+
+### 10.3 Resolution
+
+```csharp
+public interface IQuickLinkService
+{
+    IReadOnlyList<ResolvedQuickLink> ResolveForProject(ProjectContext ctx);
+    void Open(ResolvedQuickLink link);  // V1: Process.Start with UseShellExecute=true
+}
+```
+
+The same global-defaults-plus-per-project-overrides resolution shape as the MCP registry. Yes, the pattern repeats — it's deliberately not extracted to a shared abstraction in V1; if a third user emerges, refactor then. Two consumers don't justify an `IRegistry<T>` yet.
+
+### 10.4 V2 Forward Compatibility
+
+When V2 introduces sub-tabs, the only change required is the `Target` enum gains real meaning for `SubTab`, the data model is unchanged. See §17.1.
+
+---
+
+## 11. Single-Instance Behavior
 
 **Mechanism: named pipe**, not a mutex. Mutex is simpler but cannot pass arguments; named pipe lets `firepit.exe summon --project lighthouse` reach a running instance.
 
@@ -339,7 +486,7 @@ Pipe payload is a small JSON envelope: `{ "command": "focus" | "summon", "projec
 
 ---
 
-## 10. Logging
+## 12. Logging
 
 Serilog, rotating file sink. Levels:
 
@@ -354,7 +501,7 @@ Retention: 14 days, max 10 MB per file. Format: compact JSON for grep-ability.
 
 ---
 
-## 11. Distribution
+## 13. Distribution
 
 ### 11.1 Publishing
 
@@ -386,7 +533,7 @@ GitHub Releases, manual. Tag `vX.Y.Z`, attach the published archive, write relea
 
 ---
 
-## 12. Testing Strategy
+## 14. Testing Strategy
 
 ### 12.1 Layers
 
@@ -412,7 +559,7 @@ GitHub Releases, manual. Tag `vX.Y.Z`, attach the published archive, write relea
 
 ---
 
-## 13. Security Boundary Summary
+## 15. Security Boundary Summary
 
 - WebView2 → Host: only the four message types in §3.3. Anything else is dropped and logged at `Warning`.
 - Host → WebView2: only `data`, `resize`, `theme`. No code injection paths.
@@ -422,7 +569,7 @@ GitHub Releases, manual. Tag `vX.Y.Z`, attach the published archive, write relea
 
 ---
 
-## 14. Open Architectural Questions
+## 16. Open Architectural Questions
 
 These are decisions that don't block starting V1 but need answers before relevant milestones land. Tracked here so they're not forgotten.
 
@@ -430,8 +577,30 @@ These are decisions that don't block starting V1 but need answers before relevan
 2. **Tab persistence depth**: V1 restores tab list and re-runs `--continue`; scrollback restore via `xterm-addon-serialize` is a V2 candidate.
 3. **Theme tokens**: minimum viable set is background, foreground, cursor, selection, ANSI 16. Defer full theming to V2.
 4. **Resize policy on focus change**: cheaper to resize PTY only when a tab is visible? Acceptable lag? Decide in M3.
-5. **Pty.Net vs. direct ConPTY**: confirm Pty.Net handles env-override and `STARTUPINFOEX` cleanly during M1; fall back to P/Invoke if not.
+5. **ConPTY interop strategy**: M1 dogfooding showed direct `LibraryImport`-based P/Invoke wired up correctly (every Win32 call returns success, struct layout verified) but `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` did not actually attach the spawned child to the pseudo console — child output bypassed the console pipe. After several debugging passes it was deemed cheaper to consume a NuGet-packaged ConPTY wrapper (e.g. `Porta.Pty`) for V1 than to keep grinding on the interop. The `IPtyChannel` abstraction makes this a swap, not a refactor; revisiting direct P/Invoke is a V2 hardening candidate.
 
 ---
 
-*Document version: 0.1 — initial architecture*
+## 17. Forward-Compatibility Notes
+
+V2 will land features (sub-tab cockpit, file/markdown/image viewers, embedded shell, session history) that are out of V1 scope but whose presence in the design space affects V1 abstractions. This section is the explicit list of "V1 made this decision *aware of* what V2 needs" — it costs nothing in V1 and prevents refactor surprises later.
+
+### 17.1 `ITerminalView` Generalizes to `IProjectPaneView`
+
+In V2, a project tab hosts multiple panes (terminal, web view, file browser, markdown viewer, image viewer). The V1 `ITerminalView` contract — bytes in, bytes out, `InitializeAsync`, `Focus`, `Resized` — is a strict subset of what an `IProjectPaneView` will need (URL navigation, file path, save/dirty state, etc.). V2 generalizes the interface; V1 ships the terminal-only form unchanged. Don't pre-bake V2 needs into V1.
+
+### 17.2 Quick-Link `Target` Field
+
+V1 ships `QuickLinkEntry.Target = External` as the only legal value. The enum exists in V1 — see §10.1 — solely so V2 can add `SubTab` without a schema change. V1 must not branch on `Target` for any logic beyond the trivial `External`-opens-browser path.
+
+### 17.3 Tab State Pluralizes to Pane State
+
+Tab restoration (§11/M7) persists a list of `(projectName, lastSessionResumable)`. In V2, with sub-tabs, persisted state needs to extend to `(projectName, panes[])`. Schema migration is acceptable — `state.json` is local-only — but the V1 code that reads/writes `state.json` should treat the file as a versioned schema (`{ "version": 1, ... }`) so V2 can detect the upgrade rather than guess.
+
+### 17.4 Registry Pattern Repeats
+
+Both `IMcpRegistry` (§9) and `IQuickLinkService` (§10) implement the same shape: globally-defined entries activated and optionally overridden per project. A future addition (themes, env-bundles, agent presets) might also fit. The pattern is **not** extracted to a shared `IRegistry<T>` abstraction in V1 — two implementations doesn't yet justify the indirection. If a third consumer emerges, extract then; until then, the duplicated resolution logic is acceptable cost.
+
+---
+
+*Document version: 0.2 — adds MCP registry, quick links, forward-compat notes*

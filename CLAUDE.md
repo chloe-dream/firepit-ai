@@ -53,14 +53,16 @@ These are non-negotiable. Violating them is a regression even if tests pass.
 - Embedded terminal per tab (WebView2 + xterm.js + ConPTY)
 - Activity indicator: cold / igniting / burning / embers / dead — driven by PTY-read timestamps
 - Toolbar: Rekindle, Resume Last, Open in Explorer, Open External Shell
-- JSON config in `%APPDATA%\Firepit`
+- Per-project quick-links (toolbar URL buttons, system browser via `Process.Start`; data shape sub-tab-friendly for V2)
+- MCP server registry ("kindling"): global catalog + per-project activation + adapter-driven projection into the agent's expected format
+- JSON config in `%APPDATA%\Firepit` (settings, projects, MCP registry, quick-links)
 - Single-instance behavior
 
 ## Explicitly Out of Scope for V1
 
-File browser, markdown viewer, image viewer, embedded PowerShell, agent adapters beyond Claude Code, macOS/Linux, multiple themes, telemetry, crash reporting, auto-update, any AI features beyond hosting agents.
+File browser, markdown viewer, image viewer, embedded PowerShell, project sub-tabs / cockpit layout, agent adapters beyond Claude Code, macOS/Linux, multiple themes, telemetry, crash reporting, auto-update, any AI features beyond hosting agents, registry-editor UI for MCP, DPAPI in-file secrets, MCP marketplace discovery.
 
-If a request reads as V2/V3 territory, push back: confirm V1 is solid first.
+If a request reads as V2/V3 territory, push back: confirm V1 is solid first. The sub-tab cockpit in particular is a magnet for scope creep — V1 ships the foundation (terminal-only tabs, quick-links open externally), V2 generalizes.
 
 ---
 
