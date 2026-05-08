@@ -11,6 +11,7 @@ using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
 using Firepit.Core.Secrets;
 using Firepit.Core.Settings;
+using Firepit.Core.State;
 using Firepit.Process;
 using Firepit.Views;
 
@@ -27,6 +28,7 @@ public partial class MainWindow : Window
     private IMcpRegistry _mcpRegistry;
     private readonly IAgentMcpProjector _mcpProjector;
     private readonly ISecretResolver _secretResolver;
+    private readonly IStateStore _stateStore;
 
     public MainWindow()
     {
@@ -45,6 +47,7 @@ public partial class MainWindow : Window
             new CredentialManagerSecretProvider());
         _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver);
         _mcpProjector = new ClaudeCodeMcpProjector();
+        _stateStore = new JsonStateStore();
 
         ProjectList.ProjectActivated += OnProjectActivated;
         Loaded += OnLoaded;
@@ -54,6 +57,36 @@ public partial class MainWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ReloadProjectList();
+        if (_settings.Tabs.PersistAcrossRestarts)
+        {
+            RestoreTabsFromState();
+        }
+    }
+
+    private void RestoreTabsFromState()
+    {
+        var state = _stateStore.Load();
+        if (state.Tabs.Count == 0)
+        {
+            return;
+        }
+
+        var byName = ProjectList.Projects.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var tab in state.Tabs)
+        {
+            if (byName.TryGetValue(tab.ProjectName, out var project))
+            {
+                OpenSessionTab(project, resume: tab.LastSessionResumable);
+            }
+        }
+    }
+
+    public void SummonByName(string projectName)
+    {
+        if (ProjectList.Projects.FirstOrDefault(p => string.Equals(p.Name, projectName, StringComparison.OrdinalIgnoreCase)) is { } project)
+        {
+            OpenSessionTab(project, resume: false);
+        }
     }
 
     private void ReloadProjectList()
@@ -113,6 +146,11 @@ public partial class MainWindow : Window
 
     private void OnProjectActivated(object? sender, Project project)
     {
+        OpenSessionTab(project, resume: false);
+    }
+
+    private void OpenSessionTab(Project project, bool resume)
+    {
         if (_openTabs.TryGetValue(project.Path, out var existing))
         {
             existing.TabItem.IsSelected = true;
@@ -143,7 +181,14 @@ public partial class MainWindow : Window
         tabItem.IsSelected = true;
 
         _openTabs[project.Path] = (tabItem, session);
-        _ = session.EnsureInitializedAsync();
+        if (resume)
+        {
+            _ = session.RekindleAsync(resume: true, confirmIfBurning: false);
+        }
+        else
+        {
+            _ = session.EnsureInitializedAsync();
+        }
     }
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)
@@ -162,6 +207,22 @@ public partial class MainWindow : Window
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (_settings.Tabs.PersistAcrossRestarts)
+        {
+            try
+            {
+                var snapshot = new AppState(
+                    Version: AppState.CurrentVersion,
+                    Tabs: _openTabs.Values
+                        .Select(t => new TabState(
+                            ProjectName: t.Session.Context.Name,
+                            LastSessionResumable: t.Session.State != Core.Sessions.SessionState.Dead))
+                        .ToArray());
+                _stateStore.Save(snapshot);
+            }
+            catch { /* persistence is best-effort */ }
+        }
+
         var sessions = _openTabs.Values.Select(t => t.Session).ToArray();
         _openTabs.Clear();
         foreach (var session in sessions)
