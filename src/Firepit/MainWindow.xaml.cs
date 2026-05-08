@@ -63,7 +63,7 @@ public partial class MainWindow : Window
         var session = new SessionTab(new ProjectContext(project), adapter);
         var tabItem = new TabItem
         {
-            Header = project.Name,
+            Header = session.Header,
             Content = session.Content,
             Tag = session,
         };
