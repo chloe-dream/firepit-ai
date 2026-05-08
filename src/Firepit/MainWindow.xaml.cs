@@ -8,20 +8,19 @@ using Firepit.Adapters;
 using Firepit.Core.Agents;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
+using Firepit.Core.Settings;
 using Firepit.Views;
 
 namespace Firepit;
 
 public partial class MainWindow : Window
 {
-    // M5 will move this to settings.json. For now, hardcode to where projects live.
-    private static readonly string ProjectsRoot = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        "SynologyDrive", "PROJECTS");
-
     private readonly IReadOnlyDictionary<string, IAgentAdapter> _adapters;
-    private readonly IQuickLinkService _quickLinks;
+    private readonly ISettingsStore _settingsStore;
     private readonly Dictionary<string, (TabItem TabItem, SessionTab Session)> _openTabs = new(StringComparer.OrdinalIgnoreCase);
+
+    private FirepitSettings _settings;
+    private IQuickLinkService _quickLinks;
 
     public MainWindow()
     {
@@ -32,11 +31,9 @@ public partial class MainWindow : Window
             [ClaudeCodeAdapter.AdapterId] = new ClaudeCodeAdapter(),
         };
 
-        // M4 hardcodes the global default list. M5 reads it from settings.json.
-        _quickLinks = new QuickLinkService([
-            new QuickLinkEntry("GitHub",   "https://github.com/chloe-dream/{projectName}"),
-            new QuickLinkEntry("Fishbowl", "https://localhost:7180/p/{projectName}"),
-        ]);
+        _settingsStore = new JsonSettingsStore();
+        _settings = _settingsStore.Load();
+        _quickLinks = BuildQuickLinkService(_settings);
 
         ProjectList.ProjectActivated += OnProjectActivated;
         Loaded += OnLoaded;
@@ -45,8 +42,17 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ReloadProjectList();
+    }
+
+    private void ReloadProjectList()
+    {
+        var manualEntries = (_settings.Projects ?? [])
+            .Select(MapManualProject)
+            .ToArray();
+
         var discovery = new ProjectDiscovery(_adapters.Values);
-        var projects = discovery.Scan(ProjectsRoot);
+        var projects = discovery.Scan(_settings.ProjectsRoot, manualEntries);
 
         ProjectList.Projects.Clear();
         foreach (var project in projects)
@@ -54,6 +60,45 @@ public partial class MainWindow : Window
             ProjectList.Projects.Add(project);
         }
     }
+
+    private Project MapManualProject(ProjectSettings source)
+    {
+        var adapterId = !string.IsNullOrWhiteSpace(source.AgentCommand)
+            ? ClaudeCodeAdapter.AdapterId
+            : ClaudeCodeAdapter.AdapterId;
+
+        return new Project(
+            Name: source.Name,
+            Path: source.Path,
+            AdapterId: adapterId,
+            AgentCommandOverride: source.AgentCommand,
+            AgentArgsOverride: source.AgentArgs);
+    }
+
+    private IQuickLinkService BuildQuickLinkService(FirepitSettings settings)
+    {
+        var globals = (settings.QuickLinks ?? [])
+            .Select(MapLinkSetting)
+            .ToArray();
+
+        var perProject = (settings.Projects ?? [])
+            .Where(p => p.QuickLinks is { Count: > 0 })
+            .ToDictionary(p => p.Path, p => p.QuickLinks!, StringComparer.OrdinalIgnoreCase);
+
+        return new QuickLinkService(
+            globalDefaults: globals,
+            projectOverrides: ctx =>
+                perProject.TryGetValue(ctx.Path, out var overrides)
+                    ? overrides.Select(MapLinkSetting).ToArray()
+                    : []);
+    }
+
+    private static QuickLinkEntry MapLinkSetting(QuickLinkSettings source) => new(
+        Name: source.Name,
+        UrlTemplate: source.Url,
+        Target: source.Target == QuickLinkTargetSetting.External ? QuickLinkTarget.External : QuickLinkTarget.SubTab,
+        Icon: source.Icon,
+        Disabled: source.Disabled ?? false);
 
     private void OnProjectActivated(object? sender, Project project)
     {
@@ -84,6 +129,19 @@ public partial class MainWindow : Window
         _openTabs[project.Path] = (tabItem, session);
         _ = session.EnsureInitializedAsync();
     }
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsDialog(_settingsStore) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.Result is { } updated)
+        {
+            _settings = updated;
+            _quickLinks = BuildQuickLinkService(_settings);
+            ReloadProjectList();
+        }
+    }
+
+    private void OnExitClick(object sender, RoutedEventArgs e) => Close();
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

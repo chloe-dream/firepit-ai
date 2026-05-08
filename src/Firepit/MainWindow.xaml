@@ -7,59 +7,74 @@
         Background="#1A1612"
         WindowStartupLocation="CenterScreen">
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <views:ProjectListView x:Name="ProjectList" Grid.Column="0" />
+        <Menu Grid.Row="0" Background="#15110D" Foreground="#A89F92">
+            <MenuItem Header="_Firepit" Foreground="#A89F92">
+                <MenuItem Header="_Settings…" Click="OnSettingsClick" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="OnExitClick" />
+            </MenuItem>
+        </Menu>
 
-        <Grid Grid.Column="1">
-            <TextBlock x:Name="EmptyState"
-                       Text="The firepit is cold. Gather a project to begin."
-                       Foreground="#A89F92"
-                       FontFamily="Cascadia Code, Consolas, Courier New"
-                       FontSize="14"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center" />
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-            <TabControl x:Name="Tabs"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Visibility="Collapsed">
-                <TabControl.ItemContainerStyle>
-                    <Style TargetType="TabItem">
-                        <Setter Property="Foreground" Value="#A89F92" />
-                        <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="BorderThickness" Value="0" />
-                        <Setter Property="Padding" Value="14,8" />
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="TabItem">
-                                    <Border x:Name="Bd"
-                                            Padding="{TemplateBinding Padding}"
-                                            Background="{TemplateBinding Background}"
-                                            BorderThickness="0,0,0,2"
-                                            BorderBrush="Transparent">
-                                        <ContentPresenter ContentSource="Header"
-                                                          VerticalAlignment="Center" />
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="BorderBrush" Value="#F5C97B" TargetName="Bd" />
-                                            <Setter Property="Foreground" Value="#F5C97B" />
-                                        </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="#E8E2D8" />
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </TabControl.ItemContainerStyle>
-            </TabControl>
+            <views:ProjectListView x:Name="ProjectList" Grid.Column="0" />
+
+            <Grid Grid.Column="1">
+                <TextBlock x:Name="EmptyState"
+                           Text="The firepit is cold. Gather a project to begin."
+                           Foreground="#A89F92"
+                           FontFamily="Cascadia Code, Consolas, Courier New"
+                           FontSize="14"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+
+                <TabControl x:Name="Tabs"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Visibility="Collapsed">
+                    <TabControl.ItemContainerStyle>
+                        <Style TargetType="TabItem">
+                            <Setter Property="Foreground" Value="#A89F92" />
+                            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Padding" Value="14,8" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="TabItem">
+                                        <Border x:Name="Bd"
+                                                Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                BorderThickness="0,0,0,2"
+                                                BorderBrush="Transparent">
+                                            <ContentPresenter ContentSource="Header"
+                                                              VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="BorderBrush" Value="#F5C97B" TargetName="Bd" />
+                                                <Setter Property="Foreground" Value="#F5C97B" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Foreground" Value="#E8E2D8" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </TabControl.ItemContainerStyle>
+                </TabControl>
+            </Grid>
         </Grid>
     </Grid>
 </Window>
