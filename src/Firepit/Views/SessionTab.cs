@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Firepit.Core.Agents;
+using Firepit.Core.Mcp;
 using Firepit.Core.Process;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
@@ -26,6 +27,8 @@ public sealed class SessionTab : IAsyncDisposable
 
     private readonly IAgentAdapter _adapter;
     private readonly IQuickLinkService _quickLinks;
+    private readonly IMcpRegistry? _mcpRegistry;
+    private readonly IAgentMcpProjector? _mcpProjector;
     private readonly ActivityDetector _detector;
     private readonly Grid _content;
     private readonly Grid _terminalArea;
@@ -44,11 +47,15 @@ public sealed class SessionTab : IAsyncDisposable
         ProjectContext context,
         IAgentAdapter adapter,
         IQuickLinkService quickLinks,
+        IMcpRegistry? mcpRegistry = null,
+        IAgentMcpProjector? mcpProjector = null,
         IActivityClock? clock = null)
     {
         Context = context;
         _adapter = adapter;
         _quickLinks = quickLinks;
+        _mcpRegistry = mcpRegistry;
+        _mcpProjector = mcpProjector;
 
         _detector = new ActivityDetector(clock ?? new SystemActivityClock());
         _detector.StateChanged += OnStateChanged;
@@ -191,6 +198,8 @@ public sealed class SessionTab : IAsyncDisposable
             }
             HideRekindleAffordance();
 
+            await ApplyMcpAsync(ct);
+
             var spec = _adapter.BuildLaunchSpec(Context, new AgentLaunchOptions(Resume: resume));
             _ptyChannel = await ConPtyLauncher.SpawnAsync(
                 executable: spec.Executable,
@@ -211,6 +220,16 @@ public sealed class SessionTab : IAsyncDisposable
             ShowFatal(ex.Message);
             _detector.NotifyExited();
         }
+    }
+
+    private async Task ApplyMcpAsync(CancellationToken ct)
+    {
+        if (_mcpRegistry is null || _mcpProjector is null)
+        {
+            return;
+        }
+        var active = _mcpRegistry.ResolveForProject(Context);
+        await _mcpProjector.ApplyAsync(Context, active, ct).ConfigureAwait(true);
     }
 
     private async Task TeardownSessionAsync()

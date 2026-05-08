@@ -6,9 +6,12 @@ using System.Windows;
 using System.Windows.Controls;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
+using Firepit.Core.Mcp;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
+using Firepit.Core.Secrets;
 using Firepit.Core.Settings;
+using Firepit.Process;
 using Firepit.Views;
 
 namespace Firepit;
@@ -21,6 +24,9 @@ public partial class MainWindow : Window
 
     private FirepitSettings _settings;
     private IQuickLinkService _quickLinks;
+    private IMcpRegistry _mcpRegistry;
+    private readonly IAgentMcpProjector _mcpProjector;
+    private readonly ISecretResolver _secretResolver;
 
     public MainWindow()
     {
@@ -34,6 +40,11 @@ public partial class MainWindow : Window
         _settingsStore = new JsonSettingsStore();
         _settings = _settingsStore.Load();
         _quickLinks = BuildQuickLinkService(_settings);
+        _secretResolver = new CompositeSecretResolver(
+            new EnvironmentSecretProvider(),
+            new CredentialManagerSecretProvider());
+        _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver);
+        _mcpProjector = new ClaudeCodeMcpProjector();
 
         ProjectList.ProjectActivated += OnProjectActivated;
         Loaded += OnLoaded;
@@ -113,7 +124,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var session = new SessionTab(new ProjectContext(project), adapter, _quickLinks);
+        var session = new SessionTab(
+            new ProjectContext(project),
+            adapter,
+            _quickLinks,
+            _mcpRegistry,
+            _mcpProjector);
         var tabItem = new TabItem
         {
             Header = session.Header,
@@ -137,6 +153,7 @@ public partial class MainWindow : Window
         {
             _settings = updated;
             _quickLinks = BuildQuickLinkService(_settings);
+            _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver);
             ReloadProjectList();
         }
     }
