@@ -1,144 +1,89 @@
 using System;
-using System.Threading;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Windows;
-using Firepit.Core.Process;
-using Firepit.Core.Terminal;
-using Firepit.Process;
-using Firepit.Web;
+using System.Windows.Controls;
+using Firepit.Adapters;
+using Firepit.Core.Agents;
+using Firepit.Core.Projects;
+using Firepit.Views;
 
 namespace Firepit;
 
 public partial class MainWindow : Window
 {
-    private WebView2TerminalView? _terminalView;
-    private IPtyChannel? _ptyChannel;
-    private CancellationTokenSource? _sessionCts;
+    // M5 will move this to settings.json. For now, hardcode to where projects live.
+    private static readonly string ProjectsRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        "SynologyDrive", "PROJECTS");
+
+    private readonly IReadOnlyDictionary<string, IAgentAdapter> _adapters;
+    private readonly Dictionary<string, (TabItem TabItem, SessionTab Session)> _openTabs = new(StringComparer.OrdinalIgnoreCase);
 
     public MainWindow()
     {
         InitializeComponent();
+
+        _adapters = new Dictionary<string, IAgentAdapter>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ClaudeCodeAdapter.AdapterId] = new ClaudeCodeAdapter(),
+        };
+
+        ProjectList.ProjectActivated += OnProjectActivated;
         Loaded += OnLoaded;
         Closing += OnClosing;
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        try
+        var discovery = new ProjectDiscovery(_adapters.Values);
+        var projects = discovery.Scan(ProjectsRoot);
+
+        ProjectList.Projects.Clear();
+        foreach (var project in projects)
         {
-            _sessionCts = new CancellationTokenSource();
-            var ct = _sessionCts.Token;
-
-            _terminalView = new WebView2TerminalView();
-            RootGrid.Children.Clear();
-            RootGrid.Children.Add(_terminalView.Element);
-
-            await _terminalView.InitializeAsync(ct);
-
-            _ptyChannel = await ConPtyLauncher.SpawnAsync(
-                executable: "powershell.exe",
-                arguments: ["-NoLogo"],
-                workingDirectory: Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                environmentOverrides: null,
-                initialSize: TerminalSize.Default,
-                ct: ct);
-
-            _terminalView.InputReceived += OnInputReceived;
-            _terminalView.Resized += OnTerminalResized;
-
-            _ = PumpPtyOutputAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            // window closed during init
-        }
-        catch (Exception ex)
-        {
-            ShowFatal(ex);
+            ProjectList.Projects.Add(project);
         }
     }
 
-    private async System.Threading.Tasks.Task PumpPtyOutputAsync(CancellationToken ct)
+    private void OnProjectActivated(object? sender, Project project)
     {
-        if (_ptyChannel is null || _terminalView is null)
+        if (_openTabs.TryGetValue(project.Path, out var existing))
+        {
+            existing.TabItem.IsSelected = true;
+            return;
+        }
+
+        if (!_adapters.TryGetValue(project.AdapterId, out var adapter))
         {
             return;
         }
 
-        try
+        var session = new SessionTab(new ProjectContext(project), adapter);
+        var tabItem = new TabItem
         {
-            await foreach (var chunk in _ptyChannel.ReadAsync(ct))
-            {
-                await _terminalView.WriteAsync(chunk, ct);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // expected on shutdown
-        }
-        catch (Exception ex)
-        {
-            await Dispatcher.InvokeAsync(() => ShowFatal(ex));
-        }
-    }
+            Header = project.Name,
+            Content = session.Content,
+            Tag = session,
+        };
 
-    private async void OnInputReceived(object? sender, ReadOnlyMemory<byte> data)
-    {
-        if (_ptyChannel is null || _sessionCts is null)
-        {
-            return;
-        }
-        try
-        {
-            await _ptyChannel.WriteAsync(data, _sessionCts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // shutting down
-        }
-        catch (ObjectDisposedException)
-        {
-            // shutting down
-        }
-    }
+        Tabs.Items.Add(tabItem);
+        Tabs.Visibility = Visibility.Visible;
+        EmptyState.Visibility = Visibility.Collapsed;
+        tabItem.IsSelected = true;
 
-    private void OnTerminalResized(object? sender, TerminalSize size)
-    {
-        try
-        {
-            _ptyChannel?.Resize(size.Cols, size.Rows);
-        }
-        catch (ObjectDisposedException)
-        {
-            // shutting down
-        }
+        _openTabs[project.Path] = (tabItem, session);
+        _ = session.EnsureInitializedAsync();
     }
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        try { _sessionCts?.Cancel(); } catch { /* ignored */ }
-
-        if (_ptyChannel is not null)
+        var sessions = _openTabs.Values.Select(t => t.Session).ToArray();
+        _openTabs.Clear();
+        foreach (var session in sessions)
         {
-            try { await _ptyChannel.DisposeAsync(); } catch { /* ignored */ }
-            _ptyChannel = null;
-        }
-
-        if (_terminalView is not null)
-        {
-            try { _terminalView.Dispose(); } catch { /* ignored */ }
-            _terminalView = null;
-        }
-    }
-
-    private void ShowFatal(Exception ex)
-    {
-        StatusText.Text = $"Cannot summon agent: {ex.Message}";
-        StatusText.Foreground = System.Windows.Media.Brushes.IndianRed;
-        if (RootGrid.Children.Count > 1)
-        {
-            // ensure status text is visible above the WebView
-            RootGrid.Children.Remove(StatusText);
-            RootGrid.Children.Add(StatusText);
+            try { await session.DisposeAsync(); } catch { /* ignored */ }
         }
     }
 }
