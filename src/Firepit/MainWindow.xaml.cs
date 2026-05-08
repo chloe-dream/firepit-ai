@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Threading;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
 using Firepit.Core.Mcp;
@@ -87,6 +89,29 @@ public partial class MainWindow : Window
         {
             OpenSessionTab(project, resume: false);
         }
+    }
+
+    public void ShowToast(string message, bool isError = false)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.InvokeAsync(() => ShowToast(message, isError));
+            return;
+        }
+
+        ToastText.Text = message;
+        Toast.BorderBrush = new SolidColorBrush(isError
+            ? Color.FromRgb(0xCD, 0x5C, 0x5C)
+            : Color.FromRgb(0xF5, 0xC9, 0x7B));
+        Toast.Visibility = Visibility.Visible;
+
+        var hideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        hideTimer.Tick += (s, _) =>
+        {
+            Toast.Visibility = Visibility.Collapsed;
+            ((DispatcherTimer)s!).Stop();
+        };
+        hideTimer.Start();
     }
 
     private void ReloadProjectList()
