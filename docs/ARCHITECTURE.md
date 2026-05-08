@@ -227,7 +227,7 @@ Use **Pty.Net** (`Microsoft.Terminal.Wpf`'s lineage) as the primary path. If Pty
 
 ### 4.4 Errors
 
-- Process fails to spawn (executable not found): surface `AgentLaunchException` with the executable name. Tab transitions `Igniting → Dead` immediately. Status string: *"Cannot summon agent: `claude` not found on PATH."*
+- Process fails to spawn (executable not found): surface `AgentLaunchException` with the executable name. Tab transitions `Igniting → Dead` immediately. User-facing status template: *"Cannot summon agent: `<command>` not found on PATH."* — `<command>` is interpolated from the failing adapter's launch spec, never hardcoded.
 - Process exits with non-zero code: tab transitions to `Dead`; exit code stored on the session for the toolbar tooltip.
 - PTY write fails (pipe closed): treat as process death; trigger waiter.
 
