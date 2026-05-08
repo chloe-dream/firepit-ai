@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -27,3 +28,50 @@ jobs:
 
       - name: Test
         run: dotnet test Firepit.slnx --configuration Release --no-build --verbosity normal
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Publish (single-file, self-contained, win-x64)
+        run: >
+          dotnet publish src/Firepit/Firepit.csproj
+          -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish/win-x64
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          "version=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Archive
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path publish/win-x64/* `
+            -DestinationPath "firepit-${{ steps.version.outputs.version }}-win-x64.zip"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: firepit-${{ steps.version.outputs.version }}-win-x64.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
