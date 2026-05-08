@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Firepit.Adapters/Firepit.Adapters.csproj" />
+    <Project Path="src/Firepit.Core/Firepit.Core.csproj" />
+    <Project Path="src/Firepit.Process/Firepit.Process.csproj" />
+    <Project Path="src/Firepit.Web/Firepit.Web.csproj" />
+    <Project Path="src/Firepit/Firepit.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Firepit.Adapters.Tests/Firepit.Adapters.Tests.csproj" />
+    <Project Path="tests/Firepit.Core.Tests/Firepit.Core.Tests.csproj" />
+    <Project Path="tests/Firepit.Process.Tests/Firepit.Process.Tests.csproj" />
+  </Folder>
+</Solution>

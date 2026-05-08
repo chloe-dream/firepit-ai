@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Firepit.slnx
+
+      - name: Build
+        run: dotnet build Firepit.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Firepit.slnx --configuration Release --no-build --verbosity normal
