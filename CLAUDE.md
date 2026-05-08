@@ -1,6 +1,14 @@
 # CLAUDE.md
 
-Project guidance for Claude Code sessions working on Firepit. Source of truth for the product is `SPEC.md`; this file is the operational brief — what to build, what not to build, and which lines must not be crossed.
+Project guidance for Claude Code sessions working on Firepit. This file is the operational brief — what to build, what not to build, and which lines must not be crossed.
+
+## Reading order
+
+1. **`SPEC.md`** — product vision, scope, brand language. The *why*.
+2. **`docs/ARCHITECTURE.md`** — technical contract: interfaces, bridge protocol, threading, security boundary, distribution. The *how*.
+3. **`docs/ROADMAP.md`** — V1 milestones M0–M7, ordered, each with deliverables and acceptance criteria. The *when* and the working plan for autonomous execution.
+
+For any V1 implementation work, `ROADMAP.md` is the working plan. Pick the next unfinished milestone, deliver it against the listed acceptance criteria, tag it (`m{N}-{slug}`), move on.
 
 ---
 
