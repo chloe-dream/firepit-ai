@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
 using Firepit.Core.Projects;
+using Firepit.Core.QuickLinks;
 using Firepit.Views;
 
 namespace Firepit;
@@ -19,6 +20,7 @@ public partial class MainWindow : Window
         "SynologyDrive", "PROJECTS");
 
     private readonly IReadOnlyDictionary<string, IAgentAdapter> _adapters;
+    private readonly IQuickLinkService _quickLinks;
     private readonly Dictionary<string, (TabItem TabItem, SessionTab Session)> _openTabs = new(StringComparer.OrdinalIgnoreCase);
 
     public MainWindow()
@@ -29,6 +31,12 @@ public partial class MainWindow : Window
         {
             [ClaudeCodeAdapter.AdapterId] = new ClaudeCodeAdapter(),
         };
+
+        // M4 hardcodes the global default list. M5 reads it from settings.json.
+        _quickLinks = new QuickLinkService([
+            new QuickLinkEntry("GitHub",   "https://github.com/chloe-dream/{projectName}"),
+            new QuickLinkEntry("Fishbowl", "https://localhost:7180/p/{projectName}"),
+        ]);
 
         ProjectList.ProjectActivated += OnProjectActivated;
         Loaded += OnLoaded;
@@ -60,7 +68,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var session = new SessionTab(new ProjectContext(project), adapter);
+        var session = new SessionTab(new ProjectContext(project), adapter, _quickLinks);
         var tabItem = new TabItem
         {
             Header = session.Header,

@@ -1,13 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Firepit.Core.Agents;
 using Firepit.Core.Process;
 using Firepit.Core.Projects;
+using Firepit.Core.QuickLinks;
 using Firepit.Core.Sessions;
 using Firepit.Core.Terminal;
 using Firepit.Core.Time;
@@ -21,10 +25,14 @@ public sealed class SessionTab : IAsyncDisposable
     private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(200);
 
     private readonly IAgentAdapter _adapter;
+    private readonly IQuickLinkService _quickLinks;
     private readonly ActivityDetector _detector;
     private readonly Grid _content;
+    private readonly Grid _terminalArea;
     private readonly TextBlock _statusText;
     private readonly TextBlock _headerText;
+    private readonly TabToolbar _toolbar;
+    private readonly Border _rekindleAffordance;
     private readonly DispatcherTimer _tickTimer;
     private WebView2TerminalView? _terminalView;
     private IPtyChannel? _ptyChannel;
@@ -32,10 +40,16 @@ public sealed class SessionTab : IAsyncDisposable
     private bool _initialized;
     private bool _disposed;
 
-    public SessionTab(ProjectContext context, IAgentAdapter adapter, IActivityClock? clock = null)
+    public SessionTab(
+        ProjectContext context,
+        IAgentAdapter adapter,
+        IQuickLinkService quickLinks,
+        IActivityClock? clock = null)
     {
         Context = context;
         _adapter = adapter;
+        _quickLinks = quickLinks;
+
         _detector = new ActivityDetector(clock ?? new SystemActivityClock());
         _detector.StateChanged += OnStateChanged;
 
@@ -49,8 +63,26 @@ public sealed class SessionTab : IAsyncDisposable
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        _terminalArea = new Grid();
+        _terminalArea.Children.Add(_statusText);
+
+        _toolbar = new TabToolbar();
+        _toolbar.RekindleRequested += (_, _) => _ = RekindleAsync(resume: false, confirmIfBurning: true);
+        _toolbar.ResumeRequested += (_, _) => _ = RekindleAsync(resume: true, confirmIfBurning: true);
+        _toolbar.ExplorerRequested += (_, _) => OpenExplorer();
+        _toolbar.ShellRequested += (_, _) => OpenExternalShell();
+        _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
+        _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
+
+        _rekindleAffordance = BuildRekindleAffordance();
+
         _content = new Grid();
-        _content.Children.Add(_statusText);
+        _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(_toolbar, 0);
+        Grid.SetRow(_terminalArea, 1);
+        _content.Children.Add(_toolbar);
+        _content.Children.Add(_terminalArea);
 
         _headerText = new TextBlock
         {
@@ -74,52 +106,7 @@ public sealed class SessionTab : IAsyncDisposable
 
     public SessionState State => _detector.State;
 
-    public async Task EnsureInitializedAsync()
-    {
-        if (_initialized || _disposed)
-        {
-            return;
-        }
-        _initialized = true;
-
-        try
-        {
-            _cts = new CancellationTokenSource();
-            var ct = _cts.Token;
-
-            _detector.NotifyIgniting();
-            _tickTimer.Start();
-
-            _terminalView = new WebView2TerminalView();
-            _content.Children.Add(_terminalView.Element);
-
-            await _terminalView.InitializeAsync(ct);
-            _content.Children.Remove(_statusText);
-
-            var spec = _adapter.BuildLaunchSpec(Context, new AgentLaunchOptions());
-            _ptyChannel = await ConPtyLauncher.SpawnAsync(
-                executable: spec.Executable,
-                arguments: spec.Arguments,
-                workingDirectory: spec.WorkingDirectory,
-                environmentOverrides: spec.EnvironmentOverrides,
-                initialSize: TerminalSize.Default,
-                ct: ct);
-
-            _terminalView.InputReceived += OnInputReceived;
-            _terminalView.Resized += OnResized;
-
-            _ = PumpOutputAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            // tab closed during init
-        }
-        catch (Exception ex)
-        {
-            ShowFatal(ex.Message);
-            _detector.NotifyExited();
-        }
-    }
+    public Task EnsureInitializedAsync() => StartSessionAsync(resume: false);
 
     public async ValueTask DisposeAsync()
     {
@@ -146,6 +133,97 @@ public sealed class SessionTab : IAsyncDisposable
 
         _detector.StateChanged -= OnStateChanged;
         _cts?.Dispose();
+    }
+
+    public async Task RekindleAsync(bool resume, bool confirmIfBurning)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (confirmIfBurning && _detector.State == SessionState.Burning)
+        {
+            var result = MessageBox.Show(
+                $"Kill the burning session in {Context.Name}?",
+                "Rekindle",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.Cancel);
+            if (result != MessageBoxResult.OK)
+            {
+                return;
+            }
+        }
+
+        await TeardownSessionAsync();
+        await StartSessionAsync(resume);
+    }
+
+    private async Task StartSessionAsync(bool resume)
+    {
+        if (_initialized && _detector.State != SessionState.Dead && _detector.State != SessionState.Cold)
+        {
+            return;
+        }
+        _initialized = true;
+
+        try
+        {
+            _cts = new CancellationTokenSource();
+            var ct = _cts.Token;
+
+            _detector.NotifyIgniting();
+            _tickTimer.Start();
+
+            if (_terminalView is null)
+            {
+                _terminalView = new WebView2TerminalView();
+                _terminalArea.Children.Add(_terminalView.Element);
+                await _terminalView.InitializeAsync(ct);
+                _terminalView.InputReceived += OnInputReceived;
+                _terminalView.Resized += OnResized;
+            }
+
+            if (_terminalArea.Children.Contains(_statusText))
+            {
+                _terminalArea.Children.Remove(_statusText);
+            }
+            HideRekindleAffordance();
+
+            var spec = _adapter.BuildLaunchSpec(Context, new AgentLaunchOptions(Resume: resume));
+            _ptyChannel = await ConPtyLauncher.SpawnAsync(
+                executable: spec.Executable,
+                arguments: spec.Arguments,
+                workingDirectory: spec.WorkingDirectory,
+                environmentOverrides: spec.EnvironmentOverrides,
+                initialSize: TerminalSize.Default,
+                ct: ct);
+
+            _ = PumpOutputAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // tab closed during init
+        }
+        catch (Exception ex)
+        {
+            ShowFatal(ex.Message);
+            _detector.NotifyExited();
+        }
+    }
+
+    private async Task TeardownSessionAsync()
+    {
+        try { _cts?.Cancel(); } catch { /* ignored */ }
+        if (_ptyChannel is not null)
+        {
+            try { await _ptyChannel.DisposeAsync(); } catch { /* ignored */ }
+            _ptyChannel = null;
+        }
+        _cts?.Dispose();
+        _cts = null;
+        _initialized = false;
     }
 
     private async Task PumpOutputAsync(CancellationToken ct)
@@ -207,28 +285,145 @@ public sealed class SessionTab : IAsyncDisposable
     {
         if (_headerText.Dispatcher.CheckAccess())
         {
-            ApplyHeaderStyle(state);
+            ApplyStateVisuals(state);
         }
         else
         {
-            _headerText.Dispatcher.InvokeAsync(() => ApplyHeaderStyle(state));
+            _headerText.Dispatcher.InvokeAsync(() => ApplyStateVisuals(state));
         }
     }
 
-    private void ApplyHeaderStyle(SessionState state)
+    private void ApplyStateVisuals(SessionState state)
     {
         _headerText.Foreground = StateColors.Brush(state);
         _headerText.FontWeight = state == SessionState.Burning ? FontWeights.SemiBold : FontWeights.Normal;
+        if (state == SessionState.Dead)
+        {
+            ShowRekindleAffordance();
+        }
+        else
+        {
+            HideRekindleAffordance();
+        }
+    }
+
+    private void OpenExplorer()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{Context.Path}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowFatal($"Cannot open Explorer: {ex.Message}");
+        }
+    }
+
+    private void OpenExternalShell()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "wt.exe",
+                Arguments = $"-d \"{Context.Path}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-NoExit -Command \"Set-Location '{Context.Path}'\"",
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowFatal($"Cannot open shell: {ex.Message}");
+            }
+        }
+    }
+
+    private void OpenQuickLink(ResolvedQuickLink link)
+    {
+        if (!link.Available)
+        {
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = link.Url,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowFatal($"Cannot open {link.Name}: {ex.Message}");
+        }
     }
 
     private void ShowFatal(string message)
     {
-        _statusText.Text = $"Cannot summon agent: {message}";
+        _statusText.Text = message;
         _statusText.Foreground = new SolidColorBrush(Color.FromRgb(0xCD, 0x5C, 0x5C));
-        if (!_content.Children.Contains(_statusText))
+        if (!_terminalArea.Children.Contains(_statusText))
         {
-            _content.Children.Add(_statusText);
+            _terminalArea.Children.Add(_statusText);
         }
+    }
+
+    private Border BuildRekindleAffordance()
+    {
+        var label = new TextBlock
+        {
+            Text = "This session went out. Click to rekindle.",
+            Foreground = StateColors.Brush(SessionState.Igniting),
+            FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            FontSize = 14,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(20, 12, 20, 12),
+        };
+
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0xC0, 0x1A, 0x16, 0x12)),
+            BorderBrush = StateColors.Brush(SessionState.Igniting),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand,
+            Visibility = Visibility.Collapsed,
+            Child = label,
+        };
+        border.MouseLeftButtonUp += (_, _) => _ = RekindleAsync(resume: false, confirmIfBurning: false);
+        return border;
+    }
+
+    private void ShowRekindleAffordance()
+    {
+        if (!_terminalArea.Children.Contains(_rekindleAffordance))
+        {
+            _terminalArea.Children.Add(_rekindleAffordance);
+        }
+        _rekindleAffordance.Visibility = Visibility.Visible;
+    }
+
+    private void HideRekindleAffordance()
+    {
+        _rekindleAffordance.Visibility = Visibility.Collapsed;
     }
 }
 
