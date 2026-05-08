@@ -375,7 +375,7 @@ Standard, neutral, professional: `Project`, `Session`, `Tab`, `TerminalView`, `P
 
 Tooltip on the toolbar restart button: **"Rekindle this session"**
 Status bar when no projects exist: **"The firepit is cold. Gather a project to begin."**
-Error when agent CLI not found: **"Cannot summon agent: `claude` not found on PATH."**
+Error when agent CLI not found: **"Cannot summon agent: `<command>` not found on PATH."** *(`<command>` is interpolated from the active adapter's launch spec — `claude`, `aider`, or whatever the project is configured for. The shell never hardcodes a specific agent name in user-facing strings.)*
 Tab dead state hover: **"This session went out. Click to rekindle."**
 
 The voice is warm but not cloying. Lo-fi, not hyped.
