@@ -5,11 +5,12 @@
         Height="600" Width="900"
         Background="#1A1612"
         WindowStartupLocation="CenterScreen">
-    <Grid>
-        <TextBlock Text="Firepit"
-                   Foreground="#E8E2D8"
+    <Grid x:Name="RootGrid">
+        <TextBlock x:Name="StatusText"
+                   Text="Igniting..."
+                   Foreground="#A89F92"
                    FontFamily="Cascadia Code, Consolas, Courier New"
-                   FontSize="28"
+                   FontSize="14"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center" />
     </Grid>

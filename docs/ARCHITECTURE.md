@@ -198,7 +198,11 @@ Bundle a single monospace font (Cascadia Code recommended — OFL) as a `data:` 
 
 ### 4.1 Implementation Choice
 
-Use **Pty.Net** (`Microsoft.Terminal.Wpf`'s lineage) as the primary path. If Pty.Net's API proves limiting, drop to direct ConPTY P/Invoke (`CreatePseudoConsole`, `ResizePseudoConsole`, `ClosePseudoConsole`) wrapped by the same `IPtyChannel`. The choice is encapsulated; callers never see it.
+Use the **Porta.Pty** NuGet package as the ConPTY wrapper for V1. Pulls in `Vanara.PInvoke.Kernel32` and a small native helper for the cross-platform paths we don't ship; the Windows path is pure managed Vanara P/Invoke into ConPTY's `CreatePseudoConsole` / `ResizePseudoConsole` / `ClosePseudoConsole`.
+
+Why not direct hand-written `LibraryImport` P/Invoke: an early M1 attempt wired up the full ConPTY interop (pipes, attribute list, `STARTUPINFOEX`, `CreateProcessW`) with all calls reporting success and struct layout verified at runtime — but `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` did not actually attach the spawned child to the pseudo console. Spent enough time on it to confirm this isn't a five-minute fix; switched to the NuGet package and shipped. Direct interop is a V2 hardening candidate (see §16.5).
+
+Caller surface (`IPtyChannel`) is unchanged either way — the choice is encapsulated in `ConPtyLauncher.SpawnAsync` and `ConPtyChannel`.
 
 ### 4.2 Process Lifecycle
 

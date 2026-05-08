@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://firepit.local; script-src 'self' https://firepit.local; style-src 'self' https://firepit.local 'unsafe-inline'; font-src 'self' https://firepit.local data:; img-src 'self' https://firepit.local data:; connect-src 'none';">
+    <title>Firepit Terminal</title>
+    <link rel="stylesheet" href="xterm.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #1a1612;
+            overflow: hidden;
+        }
+        #terminal {
+            position: absolute;
+            inset: 0;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <script src="xterm.js"></script>
+    <script src="addon-fit.js"></script>
+    <script>
+        (function () {
+            'use strict';
+
+            const term = new Terminal({
+                fontFamily: 'Cascadia Code, Consolas, Courier New, monospace',
+                fontSize: 14,
+                cursorBlink: true,
+                theme: {
+                    background: '#1a1612',
+                    foreground: '#e8e2d8',
+                    cursor: '#e8e2d8',
+                    selectionBackground: '#4a3f33',
+                },
+                allowProposedApi: true,
+            });
+
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(document.getElementById('terminal'));
+
+            function postToHost(message) {
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage(JSON.stringify(message));
+                }
+            }
+
+            function fromBase64(b64) {
+                const binary = atob(b64);
+                const len = binary.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+                return bytes;
+            }
+
+            function toBase64(bytes) {
+                let binary = '';
+                const len = bytes.length;
+                for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+                return btoa(binary);
+            }
+
+            const utf8Encoder = new TextEncoder();
+
+            term.onData(function (data) {
+                postToHost({ type: 'input', b64: toBase64(utf8Encoder.encode(data)) });
+            });
+
+            term.onResize(function (size) {
+                postToHost({ type: 'resize', cols: size.cols, rows: size.rows });
+            });
+
+            window.chrome.webview.addEventListener('message', function (event) {
+                let message;
+                try { message = JSON.parse(event.data); } catch (e) { return; }
+                if (!message || typeof message.type !== 'string') return;
+
+                switch (message.type) {
+                    case 'data': {
+                        if (typeof message.b64 !== 'string') return;
+                        term.write(fromBase64(message.b64));
+                        break;
+                    }
+                    case 'resize': {
+                        if (typeof message.cols === 'number' && typeof message.rows === 'number') {
+                            term.resize(message.cols, message.rows);
+                        }
+                        break;
+                    }
+                    case 'theme': {
+                        if (message.vars && typeof message.vars === 'object') {
+                            term.options.theme = Object.assign({}, term.options.theme, {
+                                background: message.vars['--bg'] || term.options.theme.background,
+                                foreground: message.vars['--fg'] || term.options.theme.foreground,
+                                cursor: message.vars['--cursor'] || term.options.theme.cursor,
+                            });
+                        }
+                        break;
+                    }
+                    default:
+                        // unknown — ignore
+                        break;
+                }
+            });
+
+            window.addEventListener('resize', function () {
+                fitAddon.fit();
+            });
+
+            // Initial fit + handshake
+            fitAddon.fit();
+            postToHost({ type: 'ready' });
+            // Tell the host the initial size after the first fit
+            postToHost({ type: 'resize', cols: term.cols, rows: term.rows });
+        })();
+    </script>
+</body>
+</html>
