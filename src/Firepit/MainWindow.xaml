@@ -27,7 +27,7 @@
         </Grid.RowDefinitions>
 
         <!-- Caption bar with tabs + new-tab button + system buttons -->
-        <Grid Grid.Row="0" Background="#15110D">
+        <Grid Grid.Row="0" Background="#0A0805">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -78,8 +78,8 @@
                                     <Border x:Name="Bd"
                                             Padding="{TemplateBinding Padding}"
                                             Background="{TemplateBinding Background}"
-                                            CornerRadius="6,6,0,0"
-                                            BorderThickness="0,0,0,2"
+                                            CornerRadius="0"
+                                            BorderThickness="0,2,0,0"
                                             BorderBrush="Transparent"
                                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
                                         <Grid>
@@ -104,12 +104,17 @@
                                         <Trigger Property="IsSelected" Value="True">
                                             <Setter Property="Background" Value="#1A1612" TargetName="Bd" />
                                             <Setter Property="BorderBrush" Value="#F5C97B" TargetName="Bd" />
+                                            <Setter Property="Foreground" Value="#E8E2D8" />
                                             <Setter Property="Visibility" Value="Visible" TargetName="CloseBtn" />
                                         </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
+                                        <MultiTrigger>
+                                            <MultiTrigger.Conditions>
+                                                <Condition Property="IsMouseOver" Value="True" />
+                                                <Condition Property="IsSelected" Value="False" />
+                                            </MultiTrigger.Conditions>
                                             <Setter Property="Background" Value="#1F1A14" TargetName="Bd" />
                                             <Setter Property="Visibility" Value="Visible" TargetName="CloseBtn" />
-                                        </Trigger>
+                                        </MultiTrigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
                             </Setter.Value>

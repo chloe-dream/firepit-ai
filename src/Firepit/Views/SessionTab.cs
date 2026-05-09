@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Firepit.Core.Agents;
 using Firepit.Core.Mcp;
@@ -39,6 +40,9 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly TextBlock _headerText;
     private readonly TabToolbar _toolbar;
     private readonly Border _rekindleAffordance;
+    private readonly StackPanel _loadingIndicator;
+    private readonly RotateTransform _spinnerRotate;
+    private readonly Storyboard _spinnerStoryboard;
     private readonly DispatcherTimer _tickTimer;
     private WebView2TerminalView? _terminalView;
     private IPtyChannel? _ptyChannel;
@@ -75,8 +79,11 @@ public sealed class SessionTab : IAsyncDisposable
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        (_loadingIndicator, _spinnerRotate, _spinnerStoryboard) = BuildLoadingIndicator(context.Name);
+
         _terminalArea = new Grid();
-        _terminalArea.Children.Add(_statusText);
+        _terminalArea.Children.Add(_loadingIndicator);
+        StartSpinner();
 
         _toolbar = new TabToolbar();
         _toolbar.RekindleRequested += (_, _) => _ = RekindleAsync(resume: false, confirmIfBurning: true);
@@ -137,6 +144,7 @@ public sealed class SessionTab : IAsyncDisposable
         _disposed = true;
 
         _tickTimer.Stop();
+        StopSpinner();
 
         try { _cts?.Cancel(); } catch { /* ignored */ }
 
@@ -164,13 +172,14 @@ public sealed class SessionTab : IAsyncDisposable
 
         if (confirmIfBurning && _detector.State == SessionState.Burning)
         {
-            var result = MessageBox.Show(
-                $"Kill the burning session in {Context.Name}?",
-                "Rekindle",
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Warning,
-                MessageBoxResult.Cancel);
-            if (result != MessageBoxResult.OK)
+            var owner = Window.GetWindow(_content);
+            var confirmed = MessageDialog.Show(
+                owner,
+                title: "Restart session?",
+                message: $"The session in {Context.Name} is still burning. Restarting will kill the running agent and start a fresh one.",
+                primaryLabel: "Restart",
+                secondaryLabel: "Cancel");
+            if (!confirmed)
             {
                 return;
             }
@@ -195,6 +204,7 @@ public sealed class SessionTab : IAsyncDisposable
 
             _detector.NotifyIgniting();
             _tickTimer.Start();
+            ShowLoadingIndicator();
 
             if (_terminalView is null)
             {
@@ -211,6 +221,8 @@ public sealed class SessionTab : IAsyncDisposable
             {
                 _terminalArea.Children.Remove(_statusText);
             }
+            // The spinner stays visible until the agent's first byte actually paints —
+            // WebView2 mounting is not the same as Claude Code being ready.
             HideRekindleAffordance();
 
             await ApplyMcpAsync(ct);
@@ -361,6 +373,14 @@ public sealed class SessionTab : IAsyncDisposable
         {
             HideRekindleAffordance();
         }
+        // Hide the load spinner when output settles (Embers) or the process exits (Dead).
+        // "Output stopped streaming" is the closest transparent signal we have to
+        // "Claude Code finished its boot banner and is waiting for input" without
+        // peeking at the PTY content.
+        if (state == SessionState.Embers || state == SessionState.Dead)
+        {
+            HideLoadingIndicator();
+        }
     }
 
     private void OpenExplorer()
@@ -431,6 +451,7 @@ public sealed class SessionTab : IAsyncDisposable
 
     private void ShowFatal(string message)
     {
+        HideLoadingIndicator();
         _statusText.Text = message;
         _statusText.Foreground = new SolidColorBrush(Color.FromRgb(0xCD, 0x5C, 0x5C));
         if (!_terminalArea.Children.Contains(_statusText))
@@ -439,11 +460,100 @@ public sealed class SessionTab : IAsyncDisposable
         }
     }
 
+    private static (StackPanel Panel, RotateTransform Rotate, Storyboard Story) BuildLoadingIndicator(string projectName)
+    {
+        // Single source of truth for rotation center: RotateTransform's explicit
+        // CenterX/Y in element-local coords. Do NOT also set RenderTransformOrigin —
+        // WPF would compose the two and the spinner would orbit instead of spin.
+        var rotate = new RotateTransform(0, 12, 12);
+        var spinnerGeometry = (Geometry)Application.Current.FindResource("IconSpinnerArc");
+        var spinner = new System.Windows.Shapes.Path
+        {
+            Data = spinnerGeometry,
+            Stroke = StateColors.Brush(SessionState.Igniting),
+            StrokeThickness = 1.6,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            Width = 24,
+            Height = 24,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            RenderTransform = rotate,
+        };
+
+        var label = new TextBlock
+        {
+            Text = $"Igniting {projectName}…",
+            Foreground = StateColors.Brush(SessionState.Igniting),
+            FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            FontSize = 13,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        panel.Children.Add(spinner);
+        panel.Children.Add(label);
+        // WebView2 mounts on top of us; without this z-bump the spinner is
+        // hidden behind the WebView's background even before any output paints.
+        Panel.SetZIndex(panel, 10);
+
+        var animation = new DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = new Duration(TimeSpan.FromMilliseconds(900)),
+            RepeatBehavior = RepeatBehavior.Forever,
+        };
+        Storyboard.SetTarget(animation, spinner);
+        Storyboard.SetTargetProperty(animation,
+            new PropertyPath("RenderTransform.(RotateTransform.Angle)"));
+        var story = new Storyboard();
+        story.Children.Add(animation);
+
+        return (panel, rotate, story);
+    }
+
+    private void StartSpinner()
+    {
+        try { _spinnerStoryboard.Begin(_loadingIndicator, isControllable: true); }
+        catch { /* animation start is best-effort */ }
+    }
+
+    private void StopSpinner()
+    {
+        try { _spinnerStoryboard.Stop(_loadingIndicator); } catch { /* ignored */ }
+    }
+
+    private void ShowLoadingIndicator()
+    {
+        if (!_terminalArea.Children.Contains(_loadingIndicator))
+        {
+            _terminalArea.Children.Add(_loadingIndicator);
+        }
+        _loadingIndicator.Visibility = Visibility.Visible;
+        StartSpinner();
+    }
+
+    private void HideLoadingIndicator()
+    {
+        StopSpinner();
+        _loadingIndicator.Visibility = Visibility.Collapsed;
+        if (_terminalArea.Children.Contains(_loadingIndicator))
+        {
+            _terminalArea.Children.Remove(_loadingIndicator);
+        }
+    }
+
     private Border BuildRekindleAffordance()
     {
         var label = new TextBlock
         {
-            Text = "This session went out. Click to rekindle.",
+            Text = "This session went out. Click to restart.",
             Foreground = StateColors.Brush(SessionState.Igniting),
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
             FontSize = 14,

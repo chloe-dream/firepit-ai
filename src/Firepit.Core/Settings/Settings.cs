@@ -24,8 +24,8 @@ public sealed record FirepitSettings(
         Terminal: TerminalThemeSettings.Defaults,
         QuickLinks:
         [
-            new QuickLinkSettings("GitHub",   "https://github.com/chloe-dream/{projectName}", QuickLinkTargetSetting.External),
-            new QuickLinkSettings("Fishbowl", "https://localhost:7180/p/{projectName}",       QuickLinkTargetSetting.External),
+            new QuickLinkSettings("GitHub",   "https://github.com/chloe-dream/{projectName}", QuickLinkTargetSetting.External, Icon: "github"),
+            new QuickLinkSettings("Fishbowl", "https://localhost:7180/p/{projectName}",       QuickLinkTargetSetting.External, Icon: "fishbowl"),
         ]);
 }
 

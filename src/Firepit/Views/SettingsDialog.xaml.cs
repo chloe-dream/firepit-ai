@@ -46,8 +46,7 @@ public partial class SettingsDialog : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Could not save settings: {ex.Message}", "Firepit",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageDialog.Show(this, "Could not save settings", ex.Message);
         }
     }
 
@@ -63,8 +62,7 @@ public partial class SettingsDialog : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Could not open settings.json: {ex.Message}", "Firepit",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageDialog.Show(this, "Could not open settings.json", ex.Message);
         }
     }
 

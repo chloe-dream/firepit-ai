@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Shapes;
 using Firepit.Core.QuickLinks;
 
 namespace Firepit.Views;
@@ -22,12 +25,12 @@ public partial class TabToolbar : UserControl
     public void SetQuickLinks(IReadOnlyList<ResolvedQuickLink> links)
     {
         var buttons = new List<Button>(links.Count);
-        var style = (Style)FindResource("ToolbarButton");
+        var style = (Style)FindResource("ToolbarIconButton");
         foreach (var link in links)
         {
             var button = new Button
             {
-                Content = link.Name,
+                Content = BuildQuickLinkContent(link),
                 Style = style,
                 Tag = link,
                 IsEnabled = link.Available,
@@ -40,6 +43,68 @@ public partial class TabToolbar : UserControl
         }
         QuickLinks.ItemsSource = buttons;
     }
+
+    private static StackPanel BuildQuickLinkContent(ResolvedQuickLink link)
+    {
+        var (geometry, mode) = ResolveIcon(link.Icon, link.Name);
+
+        var path = new Path
+        {
+            Data = geometry,
+            Width = 14,
+            Height = 14,
+            Margin = new Thickness(0, 0, 7, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Stretch = Stretch.Uniform,
+        };
+
+        var foregroundBinding = new Binding(nameof(Control.Foreground))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Button) },
+        };
+
+        if (mode == IconMode.Fill)
+        {
+            path.SetBinding(Shape.FillProperty, foregroundBinding);
+        }
+        else
+        {
+            path.SetBinding(Shape.StrokeProperty, foregroundBinding);
+            path.StrokeThickness = 1.2;
+            path.StrokeLineJoin = PenLineJoin.Round;
+            // Stroked glyphs are designed at native size; uniform-stretching them
+            // would scale the stroke too. Keep them at natural geometry coords.
+            path.Stretch = Stretch.None;
+        }
+
+        var text = new TextBlock
+        {
+            Text = link.Name,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(path);
+        panel.Children.Add(text);
+        return panel;
+    }
+
+    private enum IconMode { Stroke, Fill }
+
+    private static (Geometry Geometry, IconMode Mode) ResolveIcon(string? iconHint, string linkName)
+    {
+        // Explicit Icon field wins; otherwise sniff the link name. Old configs
+        // without an Icon get sensible defaults for the seeded entries.
+        var key = (iconHint ?? linkName).Trim().ToLowerInvariant();
+        return key switch
+        {
+            "github"    => (FindGeometry("IconGitHub"),    IconMode.Fill),
+            "fishbowl"  => (FindGeometry("IconFishbowl"),  IconMode.Fill),
+            _           => (FindGeometry("IconLink"),      IconMode.Stroke),
+        };
+    }
+
+    private static Geometry FindGeometry(string key) => (Geometry)Application.Current.FindResource(key);
 
     private void OnRekindleClick(object sender, RoutedEventArgs e) => RekindleRequested?.Invoke(this, EventArgs.Empty);
     private void OnResumeClick(object sender, RoutedEventArgs e)   => ResumeRequested?.Invoke(this, EventArgs.Empty);
