@@ -327,9 +327,53 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnPickerListActivate(object sender, MouseButtonEventArgs e)
+    private void OnPickerItemClicked(object sender, MouseButtonEventArgs e)
     {
-        ActivatePickerSelection(PickerList.SelectedItem as ProjectPickerItem);
+        if (sender is ListBoxItem { Content: ProjectPickerItem item })
+        {
+            ActivatePickerSelection(item);
+            e.Handled = true;
+        }
+    }
+
+    private void OnBrowseFolderClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            InitialDirectory = _settings.ProjectsRoot,
+            Title = "Pick a folder to open as a project",
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var folder = dialog.FolderName;
+        var name = System.IO.Path.GetFileName(folder.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
+
+        // Persist as a manual project entry so it survives restart.
+        var existing = (_settings.Projects ?? []).ToList();
+        if (!existing.Any(p => string.Equals(p.Path, folder, StringComparison.OrdinalIgnoreCase)))
+        {
+            existing.Add(new ProjectSettings(name, folder));
+            _settings = _settings with { Projects = existing };
+            try
+            {
+                _settingsStore.Save(_settings);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to persist manual project {Folder}", folder);
+                ShowToast("Could not save project to settings.json — opening anyway", isError: true);
+            }
+        }
+
+        ProjectPicker.IsOpen = false;
+        var project = new Project(name, folder, ClaudeCodeAdapter.AdapterId);
+        OpenSessionTab(project, resume: false);
+
+        // Refresh the in-memory list so the picker shows the new entry next time.
+        ReloadProjectList();
     }
 
     private void ActivatePickerSelection(ProjectPickerItem? item)
