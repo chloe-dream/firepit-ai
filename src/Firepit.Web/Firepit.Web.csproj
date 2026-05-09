@@ -28,6 +28,9 @@
     <EmbeddedResource Include="Resources/node_modules/@xterm/addon-fit/lib/addon-fit.js">
       <LogicalName>Firepit.Web.Resources.addon-fit.js</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources/CascadiaCode.ttf">
+      <LogicalName>Firepit.Web.Resources.CascadiaCode.ttf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <Target Name="EnsureXtermInstalled" BeforeTargets="BeforeBuild" Inputs="Resources/package.json;Resources/package-lock.json" Outputs="Resources/node_modules/.firepit-installed">

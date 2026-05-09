@@ -14,6 +14,7 @@ using Firepit.Core.Process;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
 using Firepit.Core.Sessions;
+using Firepit.Core.Settings;
 using Firepit.Core.Terminal;
 using Firepit.Core.Time;
 using Firepit.Process;
@@ -30,6 +31,7 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly IQuickLinkService _quickLinks;
     private readonly IMcpRegistry? _mcpRegistry;
     private readonly IAgentMcpProjector? _mcpProjector;
+    private readonly TerminalThemeSettings? _terminalTheme;
     private readonly ActivityDetector _detector;
     private readonly Grid _content;
     private readonly Grid _terminalArea;
@@ -50,13 +52,15 @@ public sealed class SessionTab : IAsyncDisposable
         IQuickLinkService quickLinks,
         IMcpRegistry? mcpRegistry = null,
         IAgentMcpProjector? mcpProjector = null,
-        IActivityClock? clock = null)
+        IActivityClock? clock = null,
+        TerminalThemeSettings? terminalTheme = null)
     {
         Context = context;
         _adapter = adapter;
         _quickLinks = quickLinks;
         _mcpRegistry = mcpRegistry;
         _mcpProjector = mcpProjector;
+        _terminalTheme = terminalTheme;
 
         _detector = new ActivityDetector(clock ?? new SystemActivityClock());
         _detector.StateChanged += OnStateChanged;
@@ -195,7 +199,7 @@ public sealed class SessionTab : IAsyncDisposable
             if (_terminalView is null)
             {
                 Log.Debug("Creating WebView2TerminalView for {Project}", Context.Name);
-                _terminalView = new WebView2TerminalView();
+                _terminalView = new WebView2TerminalView(_terminalTheme);
                 _terminalArea.Children.Add(_terminalView.Element);
                 await _terminalView.InitializeAsync(ct);
                 _terminalView.InputReceived += OnInputReceived;

@@ -8,6 +8,7 @@ public sealed record FirepitSettings(
     string Theme,
     TabSettings Tabs,
     ShellsSettings Shells,
+    TerminalThemeSettings? Terminal = null,
     IReadOnlyDictionary<string, McpServerSettings>? McpServers = null,
     IReadOnlyList<QuickLinkSettings>? QuickLinks = null,
     IReadOnlyList<ProjectSettings>? Projects = null)
@@ -20,11 +21,41 @@ public sealed record FirepitSettings(
         Theme: "dark",
         Tabs: TabSettings.Defaults,
         Shells: ShellsSettings.Defaults,
+        Terminal: TerminalThemeSettings.Defaults,
         QuickLinks:
         [
             new QuickLinkSettings("GitHub",   "https://github.com/chloe-dream/{projectName}", QuickLinkTargetSetting.External),
             new QuickLinkSettings("Fishbowl", "https://localhost:7180/p/{projectName}",       QuickLinkTargetSetting.External),
         ]);
+}
+
+/// <summary>
+/// Hand-edit terminal palette tokens in settings.json. Null fields fall back
+/// to the brand-warm defaults. Hex strings — short or long form, both work.
+/// </summary>
+public sealed record TerminalThemeSettings(
+    string? Background = null,
+    string? Foreground = null,
+    string? Cursor = null,
+    string? SelectionBackground = null,
+    string? SelectionForeground = null,
+    string? SelectionInactiveBackground = null)
+{
+    public static readonly TerminalThemeSettings Defaults = new(
+        Background:                  "#1A1612",
+        Foreground:                  "#E8E2D8",
+        Cursor:                      "#E8E2D8",
+        SelectionBackground:         "#7A6855",
+        SelectionForeground:         "#15110D",
+        SelectionInactiveBackground: "#3A3026");
+
+    public TerminalThemeSettings Resolved() => new(
+        Background:                  Background                  ?? Defaults.Background,
+        Foreground:                  Foreground                  ?? Defaults.Foreground,
+        Cursor:                      Cursor                      ?? Defaults.Cursor,
+        SelectionBackground:         SelectionBackground         ?? Defaults.SelectionBackground,
+        SelectionForeground:         SelectionForeground         ?? Defaults.SelectionForeground,
+        SelectionInactiveBackground: SelectionInactiveBackground ?? Defaults.SelectionInactiveBackground);
 }
 
 public sealed record TabSettings(bool PersistAcrossRestarts, int ActivityIdleThresholdMs)

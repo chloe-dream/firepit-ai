@@ -130,20 +130,34 @@
         </Setter>
     </Style>
 
+    <!-- Close: Template (not Content) so each Button instance gets its own Path —
+         a Setter.Value UIElement is shared across instances and disappears from
+         the main window once the SettingsDialog also grabs this style. -->
     <Style x:Key="CaptionCloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButtonBase}">
-        <Setter Property="Content">
+        <Setter Property="Template">
             <Setter.Value>
-                <Path Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"
-                      StrokeThickness="1"
-                      Data="M 0,0 L 10,10 M 10,0 L 0,10" />
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            SnapsToDevicePixels="True">
+                        <Path Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Data="M 0,0 L 10,10 M 10,0 L 0,10" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#C42B1C" TargetName="Bd" />
+                            <Setter Property="Foreground" Value="#FFFFFF" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Background" Value="#A02012" TargetName="Bd" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
             </Setter.Value>
         </Setter>
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#C42B1C" />
-                <Setter Property="Foreground" Value="#FFFFFF" />
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
 </ResourceDictionary>

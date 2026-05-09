@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using Firepit.Core.Settings;
+using Firepit.Native;
 using Microsoft.Win32;
 
 namespace Firepit.Views;
@@ -16,6 +17,7 @@ public partial class SettingsDialog : Window
         _store = store;
         _settings = store.Load();
         RootBox.Text = _settings.ProjectsRoot;
+        SourceInitialized += (_, _) => WindowDarkMode.EnableForWindow(this);
     }
 
     public FirepitSettings? Result { get; private set; }
@@ -53,7 +55,6 @@ public partial class SettingsDialog : Window
     {
         try
         {
-            // ensure the file exists so the editor has something to open
             if (!System.IO.File.Exists(_store.SettingsPath))
             {
                 _store.Save(_settings);
@@ -65,5 +66,11 @@ public partial class SettingsDialog : Window
             MessageBox.Show(this, $"Could not open settings.json: {ex.Message}", "Firepit",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private void OnCloseClick(object sender, RoutedEventArgs e)
+    {
+        DialogResult = false;
+        Close();
     }
 }

@@ -20,8 +20,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>firepit.ico</ApplicationIcon>
     <!-- Drop NuGet-shipped XML doc files from publish output. -->
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="firepit.ico" />
+  </ItemGroup>
 
 </Project>

@@ -5,6 +5,7 @@
         Title="Firepit"
         Height="700" Width="1180"
         Background="#1A1612"
+        Icon="firepit.ico"
         WindowStartupLocation="CenterScreen"
         BorderBrush="#332B22"
         BorderThickness="1">
@@ -283,18 +284,46 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <Border Grid.Row="2" Padding="10,6,10,10" BorderThickness="0,1,0,0" BorderBrush="#332B22">
+                    <Border Grid.Row="2" Padding="6,6" BorderThickness="0,1,0,0" BorderBrush="#332B22">
                         <Button x:Name="BrowseFolderButton"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Foreground="#A89F92"
-                                FontFamily="Cascadia Code, Consolas, Courier New"
-                                FontSize="12"
-                                HorizontalAlignment="Left"
-                                Padding="6,4"
-                                Cursor="Hand"
                                 Click="OnBrowseFolderClick"
-                                Content="+ Browse for folder…" />
+                                Content="+ Browse for folder…"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="Foreground" Value="#A89F92" />
+                                    <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
+                                    <Setter Property="FontSize" Value="12" />
+                                    <Setter Property="Padding" Value="6,8" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd"
+                                                        Padding="{TemplateBinding Padding}"
+                                                        Background="{TemplateBinding Background}"
+                                                        CornerRadius="4">
+                                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                      VerticalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#1F1A14" TargetName="Bd" />
+                                                        <Setter Property="Foreground" Value="#E8E2D8" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter Property="Background" Value="#2A211A" TargetName="Bd" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </Border>
                 </Grid>
             </Border>

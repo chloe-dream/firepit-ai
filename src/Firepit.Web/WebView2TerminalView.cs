@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.Versioning;
 using System.Text.Json;
+using Firepit.Core.Settings;
 using Firepit.Core.Terminal;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -15,8 +16,14 @@ public sealed class WebView2TerminalView : ITerminalView
 
     private readonly WebView2 _webView = new();
     private readonly TaskCompletionSource _readyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TerminalThemeSettings _theme;
     private bool _initialized;
     private bool _disposed;
+
+    public WebView2TerminalView(TerminalThemeSettings? theme = null)
+    {
+        _theme = (theme ?? TerminalThemeSettings.Defaults).Resolved();
+    }
 
     public event EventHandler<ReadOnlyMemory<byte>>? InputReceived;
     public event EventHandler<TerminalSize>? Resized;
@@ -75,7 +82,28 @@ public sealed class WebView2TerminalView : ITerminalView
             throw new InvalidOperationException(
                 "Terminal renderer never reported ready. The WebView2 page may have failed to load — check the logs for NavigationCompleted status.");
         }
+        ApplyTheme();
         _initialized = true;
+    }
+
+    private void ApplyTheme()
+    {
+        // Settings-driven palette. Sent after the ready handshake so xterm has
+        // already constructed with the inline defaults — this just overrides.
+        var payload = JsonSerializer.Serialize(new
+        {
+            type  = "theme",
+            theme = new
+            {
+                background                  = _theme.Background,
+                foreground                  = _theme.Foreground,
+                cursor                      = _theme.Cursor,
+                selectionBackground         = _theme.SelectionBackground,
+                selectionForeground         = _theme.SelectionForeground,
+                selectionInactiveBackground = _theme.SelectionInactiveBackground,
+            }
+        });
+        _webView.CoreWebView2.PostWebMessageAsString(payload);
     }
 
     public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
@@ -132,6 +160,47 @@ public sealed class WebView2TerminalView : ITerminalView
         _webView.Dispose();
     }
 
+    private void HandlePasteRequest()
+    {
+        string text;
+        try
+        {
+            // Clipboard requires STA — WebView2 events fire on the WPF UI
+            // thread (STA), so a direct call is fine. Fail closed if anything
+            // throws (clipboard is occasionally locked by another process).
+            text = System.Windows.Clipboard.ContainsText()
+                ? System.Windows.Clipboard.GetText()
+                : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "WV2 paste-request: clipboard read failed");
+            return;
+        }
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+        var payload = $"{{\"type\":\"paste\",\"text\":{JsonSerializer.Serialize(text)}}}";
+        _webView.CoreWebView2.PostWebMessageAsString(payload);
+    }
+
+    private static void HandleCopy(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "WV2 copy: clipboard write failed");
+        }
+    }
+
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         string? json;
@@ -179,6 +248,16 @@ public sealed class WebView2TerminalView : ITerminalView
                         var size = new TerminalSize(cols, rows);
                         CurrentSize = size;
                         Resized?.Invoke(this, size);
+                    }
+                    break;
+                case "paste-request":
+                    HandlePasteRequest();
+                    break;
+                case "copy":
+                    if (doc.RootElement.TryGetProperty("text", out var textProp)
+                        && textProp.ValueKind == JsonValueKind.String)
+                    {
+                        HandleCopy(textProp.GetString());
                     }
                     break;
             }

@@ -193,7 +193,8 @@ public partial class MainWindow : Window
             adapter,
             _quickLinks,
             _mcpRegistry,
-            _mcpProjector);
+            _mcpProjector,
+            terminalTheme: _settings.Terminal);
         var tabItem = new TabItem
         {
             Header = session.Header,
@@ -408,11 +409,9 @@ public partial class MainWindow : Window
                 Status: open ? "open" : string.Empty,
                 NameBrush: open ? goldBrush : defaultBrush));
         }
-
-        if (_pickerItems.Count > 0)
-        {
-            PickerList.SelectedIndex = 0;
-        }
+        // Don't auto-select the first row — it reads as "this is the default"
+        // and visually clutters the popup. Enter on the search box still picks
+        // _pickerItems.FirstOrDefault(); Down-arrow path explicitly sets index.
     }
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)

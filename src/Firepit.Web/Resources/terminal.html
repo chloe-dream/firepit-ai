@@ -6,6 +6,15 @@
     <title>Firepit Terminal</title>
     <link rel="stylesheet" href="xterm.css">
     <style>
+        @font-face {
+            /* Embedded variable font — covers regular through bold without
+               needing the system Cascadia Code install. ~380 KB. */
+            font-family: 'Cascadia Code';
+            src: url('CascadiaCode.ttf') format('truetype-variations');
+            font-weight: 200 800;
+            font-style: normal;
+            font-display: block;
+        }
         html, body {
             margin: 0;
             padding: 0;
@@ -13,11 +22,44 @@
             background: #1a1612;
             overflow: hidden;
         }
+        /* Use offsets, NOT padding. fit-addon reads padding from the .xterm
+           element (always 0), not from this wrapper — padding here would be
+           invisible to the rows-fits calculation and the last line + scrollbar
+           tail would overflow past the bottom of the visible area. */
         #terminal {
             position: absolute;
-            inset: 0;
-            padding: 8px;
+            top: 8px;
+            bottom: 8px;
+            left: 8px;
+            right: 0;
             box-sizing: border-box;
+        }
+        /* Slim centered pill: track is 14px, pill is the inner ~6px.
+           border:transparent + background-clip is buggy on WebKit pseudo-
+           scrollbars — solid bg-coloured border is the reliable trick. */
+        .xterm-viewport::-webkit-scrollbar {
+            width: 14px;
+            background-color: #1a1612;
+        }
+        .xterm-viewport::-webkit-scrollbar-track {
+            background-color: #1a1612;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+            background-color: #5C4D3E;
+            border: 4px solid #1a1612;
+            border-radius: 7px;
+            min-height: 36px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb:hover {
+            background-color: #7A6855;
+            border: 4px solid #1a1612;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb:active {
+            background-color: #A89F92;
+            border: 4px solid #1a1612;
+        }
+        .xterm-viewport::-webkit-scrollbar-corner {
+            background: transparent;
         }
     </style>
 </head>
@@ -33,18 +75,28 @@
                 fontFamily: 'Cascadia Code, Consolas, Courier New, monospace',
                 fontSize: 14,
                 cursorBlink: true,
+                // Win-Terminal-style selection: high contrast so it's actually
+                // visible, dark fg on light bg for readability, plus an
+                // explicit inactive colour so the selection stays visible when
+                // focus shifts to the chrome / another app momentarily.
                 theme: {
                     background: '#1a1612',
                     foreground: '#e8e2d8',
                     cursor: '#e8e2d8',
-                    selectionBackground: '#4a3f33',
+                    selectionBackground:         '#7A6855',
+                    selectionForeground:         '#15110D',
+                    selectionInactiveBackground: '#3A3026',
                 },
                 allowProposedApi: true,
+                // We treat right-click as paste (Win-Terminal default since
+                // 2020). Without this xterm would also word-select on right
+                // click and the contextmenu handler would race with it.
+                rightClickSelectsWord: false,
             });
 
             const fitAddon = new FitAddon.FitAddon();
             term.loadAddon(fitAddon);
-            term.open(document.getElementById('terminal'));
+            // term.open() is deferred to after font load — see startup() below.
 
             function postToHost(message) {
                 if (window.chrome && window.chrome.webview) {
@@ -77,6 +129,55 @@
                 postToHost({ type: 'resize', cols: size.cols, rows: size.rows });
             });
 
+            // Clipboard / Terminal-input UX (Phase 5).
+            // Returning false suppresses xterm's normal handling for that key.
+            term.attachCustomKeyEventHandler(function (e) {
+                if (e.type !== 'keydown') return true;
+                const ctrl  = e.ctrlKey || e.metaKey;
+                const shift = e.shiftKey;
+                const k     = e.key;
+
+                // Ctrl+V or Ctrl+Shift+V → paste from host clipboard
+                if (ctrl && (k === 'v' || k === 'V')) {
+                    postToHost({ type: 'paste-request' });
+                    e.preventDefault();
+                    return false;
+                }
+                // Ctrl+Shift+C → always copy (Terminal convention).
+                // We deliberately do NOT clearSelection — Win Terminal keeps
+                // the selection visible after copy as visual confirmation.
+                if (ctrl && shift && (k === 'c' || k === 'C')) {
+                    if (term.hasSelection()) {
+                        postToHost({ type: 'copy', text: term.getSelection() });
+                    }
+                    e.preventDefault();
+                    return false;
+                }
+                // Ctrl+C → copy if there's a selection, otherwise let xterm
+                // forward ^C to the PTY (standard SIGINT behaviour).
+                if (ctrl && !shift && (k === 'c' || k === 'C')) {
+                    if (term.hasSelection()) {
+                        postToHost({ type: 'copy', text: term.getSelection() });
+                        e.preventDefault();
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            // Right-click is smart copy/paste (Win Terminal default):
+            //   selection present → copy it & clear, no menu, no toast
+            //   no selection      → paste from host clipboard
+            document.addEventListener('contextmenu', function (e) {
+                e.preventDefault();
+                if (term.hasSelection()) {
+                    postToHost({ type: 'copy', text: term.getSelection() });
+                    term.clearSelection();
+                } else {
+                    postToHost({ type: 'paste-request' });
+                }
+            });
+
             window.chrome.webview.addEventListener('message', function (event) {
                 let message;
                 try { message = JSON.parse(event.data); } catch (e) { return; }
@@ -95,12 +196,25 @@
                         break;
                     }
                     case 'theme': {
-                        if (message.vars && typeof message.vars === 'object') {
+                        // Settings-driven xterm palette. Host posts a flat
+                        // object with xterm-style keys; we merge into the
+                        // existing theme so absent keys keep their defaults.
+                        const t = message.theme;
+                        if (t && typeof t === 'object') {
                             term.options.theme = Object.assign({}, term.options.theme, {
-                                background: message.vars['--bg'] || term.options.theme.background,
-                                foreground: message.vars['--fg'] || term.options.theme.foreground,
-                                cursor: message.vars['--cursor'] || term.options.theme.cursor,
+                                background:                  t.background                  || term.options.theme.background,
+                                foreground:                  t.foreground                  || term.options.theme.foreground,
+                                cursor:                      t.cursor                      || term.options.theme.cursor,
+                                selectionBackground:         t.selectionBackground         || term.options.theme.selectionBackground,
+                                selectionForeground:         t.selectionForeground         || term.options.theme.selectionForeground,
+                                selectionInactiveBackground: t.selectionInactiveBackground || term.options.theme.selectionInactiveBackground,
                             });
+                        }
+                        break;
+                    }
+                    case 'paste': {
+                        if (typeof message.text === 'string') {
+                            term.paste(message.text);
                         }
                         break;
                     }
@@ -122,13 +236,27 @@
                 postToHost({ type: 'ready' });
             }
 
-            if (document.readyState === 'complete') {
+            // Open xterm AFTER the embedded Cascadia Code font is loaded.
+            // Otherwise xterm measures cell width with whatever fallback the
+            // browser rendered first, fit-addon picks a column count for that
+            // metric, and once the real font swaps in the lines overflow into
+            // the reserved scrollbar gutter.
+            function startup() {
+                term.open(document.getElementById('terminal'));
                 requestAnimationFrame(announceReady);
-            } else {
-                window.addEventListener('load', function () {
-                    requestAnimationFrame(announceReady);
-                });
             }
+
+            const domReady = (document.readyState === 'complete')
+                ? Promise.resolve()
+                : new Promise(function (r) { window.addEventListener('load', r); });
+
+            const fontReady = (document.fonts && document.fonts.load)
+                ? document.fonts.load('14px "Cascadia Code"')
+                    .then(function () { return document.fonts.load('bold 14px "Cascadia Code"'); })
+                    .catch(function () { /* font may be missing — proceed with fallback */ })
+                : Promise.resolve();
+
+            Promise.all([domReady, fontReady]).then(startup);
         })();
     </script>
 </body>
