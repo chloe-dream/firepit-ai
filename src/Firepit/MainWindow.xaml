@@ -127,6 +127,10 @@
             <StackPanel Grid.Column="4"
                         Orientation="Horizontal"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button x:Name="SettingsButton"
+                        Style="{StaticResource SettingsGearButton}"
+                        Click="OnSettingsClick"
+                        ToolTip="Settings" />
                 <Button x:Name="MinimizeButton"
                         Style="{StaticResource CaptionMinimizeButton}"
                         Click="OnMinimizeClick"
@@ -142,23 +146,9 @@
             </StackPanel>
         </Grid>
 
-        <!-- Body: just the tab content area, sidebar retired in V1.1 -->
+        <!-- Body: just the tab content area. Menu and sidebar are retired in V1.1. -->
         <Grid Grid.Row="1">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <Menu Grid.Row="0" Background="#15110D" Foreground="#A89F92">
-                <MenuItem Header="_Firepit" Foreground="#A89F92">
-                    <MenuItem Header="_Settings…" Click="OnSettingsClick" />
-                    <Separator />
-                    <MenuItem Header="E_xit" Click="OnExitClick" />
-                </MenuItem>
-            </Menu>
-
-            <Grid Grid.Row="1">
-                <TextBlock x:Name="EmptyState"
+            <TextBlock x:Name="EmptyState"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            Foreground="#A89F92"
@@ -186,10 +176,9 @@
                                FontSize="12" />
                 </Border>
 
-                <ContentControl x:Name="TabContentHost"
-                                Background="#1A1612"
-                                Visibility="Collapsed" />
-            </Grid>
+            <ContentControl x:Name="TabContentHost"
+                            Background="#1A1612"
+                            Visibility="Collapsed" />
         </Grid>
 
         <!-- Project picker popup -->

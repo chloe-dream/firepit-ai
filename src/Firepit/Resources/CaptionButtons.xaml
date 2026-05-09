@@ -70,6 +70,20 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SettingsGearButton" TargetType="Button" BasedOn="{StaticResource CaptionButtonBase}">
+        <Setter Property="Content">
+            <Setter.Value>
+                <Path Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"
+                      Fill="Transparent"
+                      StrokeThickness="1.2"
+                      StrokeLineJoin="Round"
+                      Width="16" Height="16"
+                      Stretch="Uniform"
+                      Data="M 7,0 L 9,0 L 9.5,2 L 11.5,2.5 L 13,1.3 L 14.7,3 L 13.5,4.5 L 14,6.5 L 16,7 L 16,9 L 14,9.5 L 13.5,11.5 L 14.7,13 L 13,14.7 L 11.5,13.5 L 9.5,14 L 9,16 L 7,16 L 6.5,14 L 4.5,13.5 L 3,14.7 L 1.3,13 L 2.5,11.5 L 2,9.5 L 0,9 L 0,7 L 2,6.5 L 2.5,4.5 L 1.3,3 L 3,1.3 L 4.5,2.5 L 6.5,2 Z M 8,5.5 A 2.5,2.5 0 1 0 8,10.5 A 2.5,2.5 0 1 0 8,5.5 Z" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="NewTabButton" TargetType="Button" BasedOn="{StaticResource CaptionButtonBase}">
         <Setter Property="Width" Value="36" />
         <Setter Property="Height" Value="36" />

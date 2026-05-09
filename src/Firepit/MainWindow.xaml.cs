@@ -427,8 +427,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnExitClick(object sender, RoutedEventArgs e) => Close();
-
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_settings.Tabs.PersistAcrossRestarts)
