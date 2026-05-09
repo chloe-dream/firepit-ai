@@ -6,6 +6,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources/Icons.xaml" />
                 <ResourceDictionary Source="Resources/CaptionButtons.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
