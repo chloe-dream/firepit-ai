@@ -233,8 +233,10 @@ public partial class MainWindow : Window
         var tabItem = new TabItem
         {
             Header = session.Header,
-            Content = session.Content,
+            // TabItem.Content stays null — the body's TabContentHost renders SessionTab.Content
+            // imperatively in OnTabSelectionChanged so we sidestep WPF's "one visual parent" rule.
             Tag = session,
+            ToolTip = project.Path,
         };
 
         Tabs.Items.Add(tabItem);
@@ -251,6 +253,60 @@ public partial class MainWindow : Window
         {
             _ = session.EnsureInitializedAsync();
         }
+    }
+
+    private void OnTabSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Tabs.SelectedItem is TabItem { Tag: SessionTab session })
+        {
+            if (TabContentHost.Content is UIElement existing && !ReferenceEquals(existing, session.Content))
+            {
+                TabContentHost.Content = null;
+            }
+            if (!ReferenceEquals(TabContentHost.Content, session.Content))
+            {
+                TabContentHost.Content = session.Content;
+            }
+            TabContentHost.Visibility = Visibility.Visible;
+            EmptyState.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            TabContentHost.Content = null;
+            TabContentHost.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void OnTabCloseClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: TabItem tabItem } || tabItem.Tag is not SessionTab session)
+        {
+            return;
+        }
+
+        var key = _openTabs.FirstOrDefault(kvp => ReferenceEquals(kvp.Value.TabItem, tabItem)).Key;
+        if (key is not null)
+        {
+            _openTabs.Remove(key);
+        }
+
+        var index = Tabs.Items.IndexOf(tabItem);
+        Tabs.Items.Remove(tabItem);
+        if (Tabs.Items.Count == 0)
+        {
+            Tabs.Visibility = Visibility.Collapsed;
+            TabContentHost.Content = null;
+            TabContentHost.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            var newIndex = Math.Min(index, Tabs.Items.Count - 1);
+            ((TabItem)Tabs.Items[newIndex]!).IsSelected = true;
+        }
+
+        try { await session.DisposeAsync(); } catch { /* ignored */ }
     }
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)
