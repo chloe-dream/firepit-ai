@@ -70,6 +70,21 @@
         </Setter>
     </Style>
 
+    <Style x:Key="NewTabButton" TargetType="Button" BasedOn="{StaticResource CaptionButtonBase}">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Content">
+            <Setter.Value>
+                <Path Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"
+                      StrokeThickness="1.2"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round"
+                      Data="M 0,5 L 10,5 M 5,0 L 5,10" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="TabCloseButton" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />

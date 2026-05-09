@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Firepit.Adapters;
@@ -26,6 +28,8 @@ public partial class MainWindow : Window
     private readonly IReadOnlyDictionary<string, IAgentAdapter> _adapters;
     private readonly ISettingsStore _settingsStore;
     private readonly Dictionary<string, (TabItem TabItem, SessionTab Session)> _openTabs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ObservableCollection<ProjectPickerItem> _pickerItems = new();
+    private List<Project> _allProjects = new();
 
     private FirepitSettings _settings;
     private IQuickLinkService _quickLinks;
@@ -53,7 +57,8 @@ public partial class MainWindow : Window
         _mcpProjector = new ClaudeCodeMcpProjector();
         _stateStore = new JsonStateStore();
 
-        ProjectList.ProjectActivated += OnProjectActivated;
+        PickerList.ItemsSource = _pickerItems;
+
         Loaded += OnLoaded;
         Closing += OnClosing;
         SourceInitialized += OnSourceInitialized;
@@ -90,6 +95,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ReloadProjectList()
+    {
+        var manualEntries = (_settings.Projects ?? [])
+            .Select(MapManualProject)
+            .ToArray();
+
+        var discovery = new ProjectDiscovery(_adapters.Values);
+        _allProjects = discovery.Scan(_settings.ProjectsRoot, manualEntries).ToList();
+
+        Log.Information("Project list loaded: root={Root}, found={Count}",
+            _settings.ProjectsRoot, _allProjects.Count);
+        if (_allProjects.Count == 0 && !Directory.Exists(_settings.ProjectsRoot))
+        {
+            ShowToast($"Projects root not found: {_settings.ProjectsRoot}", isError: true);
+        }
+    }
+
     private void RestoreTabsFromState()
     {
         var state = _stateStore.Load();
@@ -98,7 +120,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var byName = ProjectList.Projects.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+        var byName = _allProjects.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
         foreach (var tab in state.Tabs)
         {
             if (byName.TryGetValue(tab.ProjectName, out var project))
@@ -110,71 +132,18 @@ public partial class MainWindow : Window
 
     public void SummonByName(string projectName)
     {
-        if (ProjectList.Projects.FirstOrDefault(p => string.Equals(p.Name, projectName, StringComparison.OrdinalIgnoreCase)) is { } project)
+        if (_allProjects.FirstOrDefault(p => string.Equals(p.Name, projectName, StringComparison.OrdinalIgnoreCase)) is { } project)
         {
             OpenSessionTab(project, resume: false);
         }
     }
 
-    public void ShowToast(string message, bool isError = false)
-    {
-        if (!Dispatcher.CheckAccess())
-        {
-            Dispatcher.InvokeAsync(() => ShowToast(message, isError));
-            return;
-        }
-
-        ToastText.Text = message;
-        Toast.BorderBrush = new SolidColorBrush(isError
-            ? Color.FromRgb(0xCD, 0x5C, 0x5C)
-            : Color.FromRgb(0xF5, 0xC9, 0x7B));
-        Toast.Visibility = Visibility.Visible;
-
-        var hideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        hideTimer.Tick += (s, _) =>
-        {
-            Toast.Visibility = Visibility.Collapsed;
-            ((DispatcherTimer)s!).Stop();
-        };
-        hideTimer.Start();
-    }
-
-    private void ReloadProjectList()
-    {
-        var manualEntries = (_settings.Projects ?? [])
-            .Select(MapManualProject)
-            .ToArray();
-
-        var discovery = new ProjectDiscovery(_adapters.Values);
-        var projects = discovery.Scan(_settings.ProjectsRoot, manualEntries);
-
-        ProjectList.Projects.Clear();
-        foreach (var project in projects)
-        {
-            ProjectList.Projects.Add(project);
-        }
-
-        Log.Information("Project list loaded: root={Root}, found={Count}",
-            _settings.ProjectsRoot, projects.Count);
-        if (projects.Count == 0 && !Directory.Exists(_settings.ProjectsRoot))
-        {
-            ShowToast($"Projects root not found: {_settings.ProjectsRoot}", isError: true);
-        }
-    }
-
-    private Project MapManualProject(ProjectSettings source)
-    {
-        var adapterId = !string.IsNullOrWhiteSpace(source.AgentCommand)
-            ? ClaudeCodeAdapter.AdapterId
-            : ClaudeCodeAdapter.AdapterId;
-
-        return new Project(
-            Name: source.Name,
-            Path: source.Path,
-            AdapterId: adapterId,
-            AgentCommandOverride: source.AgentCommand,
-            AgentArgsOverride: source.AgentArgs);
-    }
+    private Project MapManualProject(ProjectSettings source) => new(
+        Name: source.Name,
+        Path: source.Path,
+        AdapterId: ClaudeCodeAdapter.AdapterId,
+        AgentCommandOverride: source.AgentCommand,
+        AgentArgsOverride: source.AgentArgs);
 
     private IQuickLinkService BuildQuickLinkService(FirepitSettings settings)
     {
@@ -200,11 +169,6 @@ public partial class MainWindow : Window
         Target: source.Target == QuickLinkTargetSetting.External ? QuickLinkTarget.External : QuickLinkTarget.SubTab,
         Icon: source.Icon,
         Disabled: source.Disabled ?? false);
-
-    private void OnProjectActivated(object? sender, Project project)
-    {
-        OpenSessionTab(project, resume: false);
-    }
 
     private void OpenSessionTab(Project project, bool resume)
     {
@@ -233,8 +197,6 @@ public partial class MainWindow : Window
         var tabItem = new TabItem
         {
             Header = session.Header,
-            // TabItem.Content stays null — the body's TabContentHost renders SessionTab.Content
-            // imperatively in OnTabSelectionChanged so we sidestep WPF's "one visual parent" rule.
             Tag = session,
             ToolTip = project.Path,
         };
@@ -309,6 +271,106 @@ public partial class MainWindow : Window
         try { await session.DisposeAsync(); } catch { /* ignored */ }
     }
 
+    private void OnNewTabClick(object sender, RoutedEventArgs e)
+    {
+        ProjectPicker.IsOpen = !ProjectPicker.IsOpen;
+    }
+
+    private void OnProjectPickerOpened(object? sender, EventArgs e)
+    {
+        ReloadProjectList();
+        PickerSearch.Text = string.Empty;
+        RefreshPickerItems(string.Empty);
+        Dispatcher.InvokeAsync(() => PickerSearch.Focus(), DispatcherPriority.Input);
+    }
+
+    private void OnPickerSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        RefreshPickerItems(PickerSearch.Text);
+    }
+
+    private void OnPickerSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Down:
+                if (_pickerItems.Count > 0)
+                {
+                    PickerList.SelectedIndex = 0;
+                    var container = (ListBoxItem?)PickerList.ItemContainerGenerator.ContainerFromIndex(0);
+                    container?.Focus();
+                    e.Handled = true;
+                }
+                break;
+            case Key.Enter:
+                ActivatePickerSelection(_pickerItems.FirstOrDefault());
+                e.Handled = true;
+                break;
+            case Key.Escape:
+                ProjectPicker.IsOpen = false;
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void OnPickerListKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ActivatePickerSelection(PickerList.SelectedItem as ProjectPickerItem);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            ProjectPicker.IsOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private void OnPickerListActivate(object sender, MouseButtonEventArgs e)
+    {
+        ActivatePickerSelection(PickerList.SelectedItem as ProjectPickerItem);
+    }
+
+    private void ActivatePickerSelection(ProjectPickerItem? item)
+    {
+        if (item?.Project is null)
+        {
+            return;
+        }
+        ProjectPicker.IsOpen = false;
+        OpenSessionTab(item.Project, resume: false);
+    }
+
+    private void RefreshPickerItems(string filter)
+    {
+        var goldBrush = (Brush)new SolidColorBrush(Color.FromRgb(0xF5, 0xC9, 0x7B));
+        var defaultBrush = (Brush)new SolidColorBrush(Color.FromRgb(0xE8, 0xE2, 0xD8));
+        goldBrush.Freeze();
+        defaultBrush.Freeze();
+
+        _pickerItems.Clear();
+        var query = string.IsNullOrWhiteSpace(filter)
+            ? _allProjects
+            : _allProjects.Where(p => p.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var project in query)
+        {
+            var open = _openTabs.ContainsKey(project.Path);
+            _pickerItems.Add(new ProjectPickerItem(
+                Project: project,
+                Name: project.Name,
+                Path: project.Path,
+                Status: open ? "open" : string.Empty,
+                NameBrush: open ? goldBrush : defaultBrush));
+        }
+
+        if (_pickerItems.Count > 0)
+        {
+            PickerList.SelectedIndex = 0;
+        }
+    }
+
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsDialog(_settingsStore) { Owner = this };
@@ -348,4 +410,34 @@ public partial class MainWindow : Window
             try { await session.DisposeAsync(); } catch { /* ignored */ }
         }
     }
+
+    public void ShowToast(string message, bool isError = false)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.InvokeAsync(() => ShowToast(message, isError));
+            return;
+        }
+
+        ToastText.Text = message;
+        Toast.BorderBrush = new SolidColorBrush(isError
+            ? Color.FromRgb(0xCD, 0x5C, 0x5C)
+            : Color.FromRgb(0xF5, 0xC9, 0x7B));
+        Toast.Visibility = Visibility.Visible;
+
+        var hideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        hideTimer.Tick += (s, _) =>
+        {
+            Toast.Visibility = Visibility.Collapsed;
+            ((DispatcherTimer)s!).Stop();
+        };
+        hideTimer.Start();
+    }
+
+    public sealed record ProjectPickerItem(
+        Project Project,
+        string Name,
+        string Path,
+        string Status,
+        Brush NameBrush);
 }
