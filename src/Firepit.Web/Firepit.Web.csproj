@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3296.44" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,10 +30,7 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <Target Name="EnsureXtermInstalled"
-          BeforeTargets="BeforeBuild"
-          Inputs="Resources/package.json;Resources/package-lock.json"
-          Outputs="Resources/node_modules/.firepit-installed">
+  <Target Name="EnsureXtermInstalled" BeforeTargets="BeforeBuild" Inputs="Resources/package.json;Resources/package-lock.json" Outputs="Resources/node_modules/.firepit-installed">
     <Exec Command="npm ci --no-fund --no-audit" WorkingDirectory="Resources" />
     <Touch Files="Resources/node_modules/.firepit-installed" AlwaysCreate="true" />
   </Target>

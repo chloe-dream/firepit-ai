@@ -16,6 +16,7 @@ using Firepit.Core.Settings;
 using Firepit.Core.State;
 using Firepit.Process;
 using Firepit.Views;
+using Serilog;
 
 namespace Firepit;
 
@@ -128,6 +129,13 @@ public partial class MainWindow : Window
         {
             ProjectList.Projects.Add(project);
         }
+
+        Log.Information("Project list loaded: root={Root}, found={Count}",
+            _settings.ProjectsRoot, projects.Count);
+        if (projects.Count == 0 && !Directory.Exists(_settings.ProjectsRoot))
+        {
+            ShowToast($"Projects root not found: {_settings.ProjectsRoot}", isError: true);
+        }
     }
 
     private Project MapManualProject(ProjectSettings source)
@@ -184,8 +192,13 @@ public partial class MainWindow : Window
 
         if (!_adapters.TryGetValue(project.AdapterId, out var adapter))
         {
+            Log.Warning("No adapter registered for project {Project} (adapterId={AdapterId})",
+                project.Name, project.AdapterId);
+            ShowToast($"No adapter for {project.Name}", isError: true);
             return;
         }
+        Log.Information("Opening tab for project {Project} (resume={Resume}) via adapter {Adapter}",
+            project.Name, resume, adapter.Id);
 
         var session = new SessionTab(
             new ProjectContext(project),

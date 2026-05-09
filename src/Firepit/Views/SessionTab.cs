@@ -18,6 +18,7 @@ using Firepit.Core.Terminal;
 using Firepit.Core.Time;
 using Firepit.Process;
 using Firepit.Web;
+using Serilog;
 
 namespace Firepit.Views;
 
@@ -83,13 +84,21 @@ public sealed class SessionTab : IAsyncDisposable
 
         _rekindleAffordance = BuildRekindleAffordance();
 
-        _content = new Grid();
+        _terminalArea.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x16, 0x12));
+
+        _content = new Grid
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x16, 0x12)),
+        };
         _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(_toolbar, 0);
         Grid.SetRow(_terminalArea, 1);
         _content.Children.Add(_toolbar);
         _content.Children.Add(_terminalArea);
+        _content.Loaded += (_, _) => Log.Information(
+            "SessionTab content loaded for {Project}: contentSize={W}x{H}, toolbarVisible={ToolbarVisible}",
+            Context.Name, _content.ActualWidth, _content.ActualHeight, _toolbar.IsVisible);
 
         _headerText = new TextBlock
         {
@@ -185,11 +194,13 @@ public sealed class SessionTab : IAsyncDisposable
 
             if (_terminalView is null)
             {
+                Log.Debug("Creating WebView2TerminalView for {Project}", Context.Name);
                 _terminalView = new WebView2TerminalView();
                 _terminalArea.Children.Add(_terminalView.Element);
                 await _terminalView.InitializeAsync(ct);
                 _terminalView.InputReceived += OnInputReceived;
                 _terminalView.Resized += OnResized;
+                Log.Debug("WebView2 ready for {Project}", Context.Name);
             }
 
             if (_terminalArea.Children.Contains(_statusText))
@@ -201,22 +212,36 @@ public sealed class SessionTab : IAsyncDisposable
             await ApplyMcpAsync(ct);
 
             var spec = _adapter.BuildLaunchSpec(Context, new AgentLaunchOptions(Resume: resume));
+            var initialSize = _terminalView!.CurrentSize ?? TerminalSize.Default;
+            Log.Information("Spawning agent for {Project}: {Executable} {Args} in {Cwd} (size {Cols}x{Rows})",
+                Context.Name, spec.Executable, string.Join(' ', spec.Arguments), spec.WorkingDirectory,
+                initialSize.Cols, initialSize.Rows);
             _ptyChannel = await ConPtyLauncher.SpawnAsync(
                 executable: spec.Executable,
                 arguments: spec.Arguments,
                 workingDirectory: spec.WorkingDirectory,
                 environmentOverrides: spec.EnvironmentOverrides,
-                initialSize: TerminalSize.Default,
+                initialSize: initialSize,
                 ct: ct);
+            Log.Information("Agent spawned for {Project}: pid={Pid}", Context.Name, _ptyChannel.Pid);
+
+            // Apply any size update that arrived between init and now (e.g., user resized the
+            // window during WebView2 startup).
+            if (_terminalView.CurrentSize is { } latest
+                && (latest.Cols != initialSize.Cols || latest.Rows != initialSize.Rows))
+            {
+                _ptyChannel.Resize(latest.Cols, latest.Rows);
+            }
 
             _ = PumpOutputAsync(ct);
         }
         catch (OperationCanceledException)
         {
-            // tab closed during init
+            Log.Information("Session start cancelled for {Project}", Context.Name);
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "Session start failed for {Project}", Context.Name);
             ShowFatal(ex.Message);
             _detector.NotifyExited();
         }
@@ -229,6 +254,14 @@ public sealed class SessionTab : IAsyncDisposable
             return;
         }
         var active = _mcpRegistry.ResolveForProject(Context);
+        Log.Information("Projecting {Count} MCP server(s) for {Project}", active.Count, Context.Name);
+        foreach (var server in active)
+        {
+            foreach (var warning in server.ResolutionWarnings)
+            {
+                Log.Warning("MCP {Server} resolution: {Warning}", server.Id, warning);
+            }
+        }
         await _mcpProjector.ApplyAsync(Context, active, ct).ConfigureAwait(true);
     }
 

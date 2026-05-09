@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://firepit.local; script-src 'self' https://firepit.local; style-src 'self' https://firepit.local 'unsafe-inline'; font-src 'self' https://firepit.local data:; img-src 'self' https://firepit.local data:; connect-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://firepit.local; script-src 'self' https://firepit.local 'unsafe-inline'; style-src 'self' https://firepit.local 'unsafe-inline'; font-src 'self' https://firepit.local data:; img-src 'self' https://firepit.local data:; connect-src 'none';">
     <title>Firepit Terminal</title>
     <link rel="stylesheet" href="xterm.css">
     <style>
@@ -111,14 +111,24 @@
             });
 
             window.addEventListener('resize', function () {
-                fitAddon.fit();
+                try { fitAddon.fit(); } catch (e) { /* ignore */ }
             });
 
-            // Initial fit + handshake
-            fitAddon.fit();
-            postToHost({ type: 'ready' });
-            // Tell the host the initial size after the first fit
-            postToHost({ type: 'resize', cols: term.cols, rows: term.rows });
+            function announceReady() {
+                try { fitAddon.fit(); } catch (e) { /* ignore */ }
+                // Resize MUST be posted before 'ready' — the host blocks on the
+                // ready handshake to spawn the agent with the correct dimensions.
+                postToHost({ type: 'resize', cols: term.cols, rows: term.rows });
+                postToHost({ type: 'ready' });
+            }
+
+            if (document.readyState === 'complete') {
+                requestAnimationFrame(announceReady);
+            } else {
+                window.addEventListener('load', function () {
+                    requestAnimationFrame(announceReady);
+                });
+            }
         })();
     </script>
 </body>

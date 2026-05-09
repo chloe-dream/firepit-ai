@@ -4,6 +4,7 @@ using System.Text.Json;
 using Firepit.Core.Terminal;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using Serilog;
 
 namespace Firepit.Web;
 
@@ -22,6 +23,8 @@ public sealed class WebView2TerminalView : ITerminalView
 
     public WebView2 Element => _webView;
 
+    public TerminalSize? CurrentSize { get; private set; }
+
     public async Task InitializeAsync(CancellationToken ct)
     {
         if (_initialized)
@@ -29,16 +32,17 @@ public sealed class WebView2TerminalView : ITerminalView
             return;
         }
 
+        Log.Information("WV2 init: extracting assets");
         var assetsDir = WebAssetExtractor.Extract();
-        var userDataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Firepit",
-            "WebView2");
-        Directory.CreateDirectory(userDataFolder);
+        Log.Information("WV2 init: assets at {Dir}", assetsDir);
 
-        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder)
-            .ConfigureAwait(true);
+        Log.Information("WV2 init: getting environment");
+        var environment = await FirepitWebViewEnvironment.GetAsync().ConfigureAwait(true);
+        Log.Information("WV2 init: environment ready (browser version {Version})", environment.BrowserVersionString);
+
+        Log.Information("WV2 init: ensuring CoreWebView2");
         await _webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+        Log.Information("WV2 init: CoreWebView2 ready");
 
         _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             hostName: "firepit.local",
@@ -46,13 +50,31 @@ public sealed class WebView2TerminalView : ITerminalView
             accessKind: CoreWebView2HostResourceAccessKind.Allow);
 
         _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        _webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        _webView.CoreWebView2.Settings.AreDevToolsEnabled = true; // V1 diagnostic — flip back later
         _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
         _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+        _webView.CoreWebView2.NavigationCompleted += (_, args) =>
+            Log.Information("WV2 NavigationCompleted: success={IsSuccess}, status={Status}", args.IsSuccess, args.WebErrorStatus);
+        _webView.CoreWebView2.ProcessFailed += (_, args) =>
+            Log.Error("WV2 ProcessFailed: kind={Kind}, reason={Reason}, exitCode={Exit}",
+                args.ProcessFailedKind, args.Reason, args.ExitCode);
+
+        Log.Information("WV2 init: navigating to {Uri}", TerminalUri);
         _webView.Source = TerminalUri;
 
-        await _readyTcs.Task.WaitAsync(ct).ConfigureAwait(true);
+        Log.Information("WV2 init: waiting for ready handshake (15 s timeout)");
+        try
+        {
+            await _readyTcs.Task.WaitAsync(TimeSpan.FromSeconds(15), ct).ConfigureAwait(true);
+            Log.Information("WV2 init: ready received");
+        }
+        catch (TimeoutException)
+        {
+            Log.Error("WV2 init: ready handshake timed out after 15 s");
+            throw new InvalidOperationException(
+                "Terminal renderer never reported ready. The WebView2 page may have failed to load — check the logs for NavigationCompleted status.");
+        }
         _initialized = true;
     }
 
@@ -137,6 +159,7 @@ public sealed class WebView2TerminalView : ITerminalView
             switch (type)
             {
                 case "ready":
+                    Log.Information("WV2 bridge: 'ready' received");
                     _readyTcs.TrySetResult();
                     break;
                 case "input":
@@ -153,7 +176,9 @@ public sealed class WebView2TerminalView : ITerminalView
                         && colsProp.TryGetInt32(out var cols)
                         && rowsProp.TryGetInt32(out var rows))
                     {
-                        Resized?.Invoke(this, new TerminalSize(cols, rows));
+                        var size = new TerminalSize(cols, rows);
+                        CurrentSize = size;
+                        Resized?.Invoke(this, size);
                     }
                     break;
             }
