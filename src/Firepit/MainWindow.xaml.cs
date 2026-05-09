@@ -14,6 +14,7 @@ using Firepit.Core.QuickLinks;
 using Firepit.Core.Secrets;
 using Firepit.Core.Settings;
 using Firepit.Core.State;
+using Firepit.Native;
 using Firepit.Process;
 using Firepit.Views;
 using Serilog;
@@ -55,7 +56,30 @@ public partial class MainWindow : Window
         ProjectList.ProjectActivated += OnProjectActivated;
         Loaded += OnLoaded;
         Closing += OnClosing;
+        SourceInitialized += OnSourceInitialized;
+        StateChanged += OnWindowStateChanged;
     }
+
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        WindowDarkMode.EnableForWindow(this);
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        MaxRestoreButton.Style = (Style)FindResource(
+            WindowState == WindowState.Maximized
+                ? "CaptionRestoreButton"
+                : "CaptionMaximizeButton");
+        MaxRestoreButton.ToolTip = WindowState == WindowState.Maximized ? "Restore" : "Maximize";
+    }
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaxRestoreClick(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
