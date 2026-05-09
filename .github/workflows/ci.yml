@@ -59,19 +59,35 @@ jobs:
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
+          $numeric = $tag -replace '^v', ''
           "version=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "numeric=$numeric" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Archive
+      - name: Archive (zip)
         shell: pwsh
         run: |
           Compress-Archive `
             -Path publish/win-x64/* `
             -DestinationPath "firepit-${{ steps.version.outputs.version }}-win-x64.zip"
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=${{ steps.version.outputs.numeric }}" `
+            installer\firepit.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit $LASTEXITCODE" }
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: firepit-${{ steps.version.outputs.version }}-win-x64.zip
+          files: |
+            firepit-${{ steps.version.outputs.version }}-win-x64.zip
+            installer/output/FirepitSetup-${{ steps.version.outputs.numeric }}-win-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
