@@ -2,6 +2,21 @@
 
 Project guidance for Claude Code sessions working on Firepit. This file is the operational brief — what to build, what not to build, and which lines must not be crossed.
 
+## Git workflow (durable authorization)
+
+This is a single-developer repo. The following git operations are **authorized in advance** for the Claude Code agent — no per-action confirmation needed:
+
+- **Direct push to `main`** — PRs are not required. Commit, push, move on.
+- **Push of `v*` release tags and `m*` milestone tags** — when the work justifies a release, tag and push without ceremony.
+- **Branch deletion** (local + remote) for cleanup of merged feature/release branches.
+
+Still gated (require explicit per-action confirmation):
+
+- `git push --force` / `--force-with-lease` to `main`
+- `git reset --hard` on `main`
+- Tag deletion or moving an existing tag
+- Anything destructive to history
+
 ## Reading order
 
 1. **`SPEC.md`** — product vision, scope, brand language. The *why*.
