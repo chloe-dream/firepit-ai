@@ -391,6 +391,12 @@
                         }
                         break;
                     }
+                    case 'focus': {
+                        // Host (e.g. on tab switch) asks xterm to take focus
+                        // so the user can type immediately without clicking.
+                        try { term.focus(); } catch (e) { /* ignore */ }
+                        break;
+                    }
                     default:
                         // unknown — ignore
                         break;

@@ -144,6 +144,14 @@ public sealed class SessionTab : IAsyncDisposable
 
     public Task EnsureInitializedAsync() => StartSessionAsync(resume: false);
 
+    /// <summary>
+    /// Hand focus to the embedded terminal so the user can type immediately
+    /// (no click needed). Safe to call before WebView2 is ready — the inner
+    /// xterm focus message is best-effort and silently no-ops if the bridge
+    /// isn't up yet.
+    /// </summary>
+    public void FocusTerminal() => _terminalView?.Focus();
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed)

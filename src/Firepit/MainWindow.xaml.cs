@@ -402,6 +402,11 @@ public partial class MainWindow : Window
             }
             TabContentHost.Visibility = Visibility.Visible;
             EmptyState.Visibility = Visibility.Collapsed;
+
+            // Defer focus until layout settles — calling immediately during
+            // SelectionChanged races the WebView2 hwnd attach and the focus
+            // call no-ops. One dispatcher tick later is enough.
+            Dispatcher.BeginInvoke(new Action(session.FocusTerminal), DispatcherPriority.Input);
         }
         else
         {

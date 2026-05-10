@@ -155,14 +155,25 @@ public sealed class WebView2TerminalView : ITerminalView
 
     public void Focus()
     {
+        // Two-stage focus: WPF focuses the WebView2 host, then a bridge
+        // message tells xterm.js to focus its hidden textarea. Without the
+        // second stage, the WebView2 has focus but keystrokes go to the
+        // browser layer rather than the terminal.
         if (_webView.Dispatcher.CheckAccess())
         {
-            _webView.Focus();
+            FocusCore();
         }
         else
         {
-            _webView.Dispatcher.InvokeAsync(() => _webView.Focus());
+            _webView.Dispatcher.InvokeAsync(FocusCore);
         }
+    }
+
+    private void FocusCore()
+    {
+        try { _webView.Focus(); } catch { /* ignored */ }
+        try { _webView.CoreWebView2?.PostWebMessageAsString("{\"type\":\"focus\"}"); }
+        catch { /* CoreWebView2 not ready yet — first user click will refocus */ }
     }
 
     public void Dispose()
