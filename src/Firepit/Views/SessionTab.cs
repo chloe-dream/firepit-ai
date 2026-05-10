@@ -223,6 +223,7 @@ public sealed class SessionTab : IAsyncDisposable
                 await _terminalView.InitializeAsync(ct);
                 _terminalView.InputReceived += OnInputReceived;
                 _terminalView.Resized += OnResized;
+                _terminalView.ProgressChanged += OnProgressChanged;
                 Log.Debug("WebView2 ready for {Project}", Context.Name);
             }
 
@@ -356,6 +357,11 @@ public sealed class SessionTab : IAsyncDisposable
             _ptyChannel?.Resize(size.Cols, size.Rows);
         }
         catch (ObjectDisposedException) { }
+    }
+
+    private void OnProgressChanged(object? sender, bool active)
+    {
+        _detector.NotifyProgress(active);
     }
 
     private void OnStateChanged(object? sender, SessionState state)

@@ -12,6 +12,7 @@ public sealed class ActivityDetector
     private SessionState _state = SessionState.Cold;
     private DateTimeOffset? _lastReadAt;
     private DateTimeOffset? _ignitedAt;
+    private bool _progressActive;
 
     public ActivityDetector(IActivityClock clock, ActivitySettings? settings = null)
     {
@@ -70,13 +71,47 @@ public sealed class ActivityDetector
         if (transition is { } s) StateChanged?.Invoke(this, s);
     }
 
+    /// <summary>
+    /// The agent is reporting in-progress work via OSC 9;4 (Claude Code emits
+    /// state=3 indeterminate during thinking and tool calls, state=0 to clear).
+    /// While active, Burning is pinned regardless of byte-stream idle timeout —
+    /// thinking can produce no output for many seconds, but the session is not idle.
+    /// </summary>
+    public void NotifyProgress(bool active)
+    {
+        SessionState? transition = null;
+        lock (_gate)
+        {
+            if (_progressActive == active)
+            {
+                return;
+            }
+            _progressActive = active;
+
+            if (_state == SessionState.Dead)
+            {
+                return;
+            }
+
+            // Refresh the read timestamp on every progress flip so the threshold
+            // timer doesn't snap state immediately after the transition.
+            _lastReadAt = _clock.UtcNow;
+
+            if (active && _state != SessionState.Burning)
+            {
+                transition = SetLocked(SessionState.Burning);
+            }
+        }
+        if (transition is { } s) StateChanged?.Invoke(this, s);
+    }
+
     public void Tick()
     {
         SessionState? transition = null;
         lock (_gate)
         {
             var now = _clock.UtcNow;
-            if (_state == SessionState.Burning && _lastReadAt is { } last)
+            if (_state == SessionState.Burning && _lastReadAt is { } last && !_progressActive)
             {
                 if (now - last > _idleThreshold)
                 {

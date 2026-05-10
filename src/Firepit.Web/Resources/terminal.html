@@ -129,6 +129,25 @@
                 postToHost({ type: 'resize', cols: size.cols, rows: size.rows });
             });
 
+            // OSC 9;4 (ConEmu/Windows-Terminal tab-progress protocol). Claude
+            // Code emits state=3 (indeterminate) during thinking and tool
+            // calls, state=0 to clear. We use this to keep the tab "burning"
+            // while the agent is busy but not writing — e.g. waiting on an LLM
+            // response. xterm's parser hands us "4;<state>[;<value>]" stripped
+            // of the OSC header. Returning true tells xterm we consumed it.
+            if (term.parser && typeof term.parser.registerOscHandler === 'function') {
+                term.parser.registerOscHandler(9, function (data) {
+                    if (typeof data !== 'string' || data.length < 3) return false;
+                    if (data.charCodeAt(0) !== 52 /* '4' */ || data.charCodeAt(1) !== 59 /* ';' */) return false;
+                    const parts = data.split(';');
+                    if (parts.length < 2) return false;
+                    const state = parseInt(parts[1], 10);
+                    if (!Number.isFinite(state)) return false;
+                    postToHost({ type: 'progress', state: state });
+                    return true;
+                });
+            }
+
             // Clipboard / Terminal-input UX (Phase 5).
             // Returning false suppresses xterm's normal handling for that key.
             term.attachCustomKeyEventHandler(function (e) {

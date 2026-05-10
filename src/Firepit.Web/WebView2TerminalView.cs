@@ -35,6 +35,7 @@ public sealed class WebView2TerminalView : ITerminalView
 
     public event EventHandler<ReadOnlyMemory<byte>>? InputReceived;
     public event EventHandler<TerminalSize>? Resized;
+    public event EventHandler<bool>? ProgressChanged;
 
     public WebView2 Element => _webView;
 
@@ -272,6 +273,17 @@ public sealed class WebView2TerminalView : ITerminalView
                         var size = new TerminalSize(cols, rows);
                         CurrentSize = size;
                         Resized?.Invoke(this, size);
+                    }
+                    break;
+                case "progress":
+                    // OSC 9;4 from the agent. State 0 = cleared (idle), any
+                    // other value = active. We don't differentiate normal vs
+                    // error vs indeterminate at this layer — the activity
+                    // detector only needs the boolean.
+                    if (doc.RootElement.TryGetProperty("state", out var stateProp)
+                        && stateProp.TryGetInt32(out var progressState))
+                    {
+                        ProgressChanged?.Invoke(this, progressState != 0);
                     }
                     break;
                 case "paste-request":
