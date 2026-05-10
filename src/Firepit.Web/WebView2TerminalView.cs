@@ -14,6 +14,12 @@ public sealed class WebView2TerminalView : ITerminalView
 {
     private static readonly Uri TerminalUri = new("https://firepit.local/terminal.html");
 
+    // Serialize WebView2 + xterm.js boot across all tabs. Parallel inits during
+    // cold-start with 4 tabs blew past the 15s ready-handshake timeout under
+    // load: the tab survived as a zombie — ready arrived 30s+ late, session
+    // was already Dead, no PTY channel, every keypress silently dropped.
+    private static readonly SemaphoreSlim InitGate = new(1, 1);
+
     private readonly WebView2 _webView = new();
     private readonly TaskCompletionSource _readyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TerminalThemeSettings _theme;
@@ -49,44 +55,53 @@ public sealed class WebView2TerminalView : ITerminalView
         var environment = await FirepitWebViewEnvironment.GetAsync().ConfigureAwait(true);
         Log.Information("WV2 init: environment ready (browser version {Version})", environment.BrowserVersionString);
 
-        Log.Information("WV2 init: ensuring CoreWebView2");
-        await _webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
-        Log.Information("WV2 init: CoreWebView2 ready");
-
-        _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-            hostName: "firepit.local",
-            folderPath: assetsDir,
-            accessKind: CoreWebView2HostResourceAccessKind.Allow);
-
-        _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        _webView.CoreWebView2.Settings.AreDevToolsEnabled = true; // V1 diagnostic — flip back later
-        _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
-
-        _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-        _webView.CoreWebView2.NavigationCompleted += (_, args) =>
-            Log.Information("WV2 NavigationCompleted: success={IsSuccess}, status={Status}", args.IsSuccess, args.WebErrorStatus);
-        _webView.CoreWebView2.ProcessFailed += (_, args) =>
-            Log.Error("WV2 ProcessFailed: kind={Kind}, reason={Reason}, exitCode={Exit}",
-                args.ProcessFailedKind, args.Reason, args.ExitCode);
-
-        Log.Information("WV2 init: navigating to {Uri}", TerminalUri);
-        _webView.Source = TerminalUri;
-
-        Log.Information("WV2 init: waiting for ready handshake (15 s timeout)");
+        Log.Information("WV2 init: waiting for init gate (queued={Queued})", InitGate.CurrentCount == 0);
+        await InitGate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
-            await _readyTcs.Task.WaitAsync(TimeSpan.FromSeconds(15), ct).ConfigureAwait(true);
-            Log.Information("WV2 init: ready received");
+            Log.Information("WV2 init: ensuring CoreWebView2");
+            await _webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+            Log.Information("WV2 init: CoreWebView2 ready");
+
+            _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                hostName: "firepit.local",
+                folderPath: assetsDir,
+                accessKind: CoreWebView2HostResourceAccessKind.Allow);
+
+            _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            _webView.CoreWebView2.Settings.AreDevToolsEnabled = true; // V1 diagnostic — flip back later
+            _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+
+            _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            _webView.CoreWebView2.NavigationCompleted += (_, args) =>
+                Log.Information("WV2 NavigationCompleted: success={IsSuccess}, status={Status}", args.IsSuccess, args.WebErrorStatus);
+            _webView.CoreWebView2.ProcessFailed += (_, args) =>
+                Log.Error("WV2 ProcessFailed: kind={Kind}, reason={Reason}, exitCode={Exit}",
+                    args.ProcessFailedKind, args.Reason, args.ExitCode);
+
+            Log.Information("WV2 init: navigating to {Uri}", TerminalUri);
+            _webView.Source = TerminalUri;
+
+            Log.Information("WV2 init: waiting for ready handshake (15 s timeout)");
+            try
+            {
+                await _readyTcs.Task.WaitAsync(TimeSpan.FromSeconds(15), ct).ConfigureAwait(true);
+                Log.Information("WV2 init: ready received");
+            }
+            catch (TimeoutException)
+            {
+                Log.Error("WV2 init: ready handshake timed out after 15 s");
+                throw new InvalidOperationException(
+                    "Terminal renderer never reported ready. The WebView2 page may have failed to load — check the logs for NavigationCompleted status.");
+            }
+            ApplyTheme();
+            ApplyFontSize();
+            _initialized = true;
         }
-        catch (TimeoutException)
+        finally
         {
-            Log.Error("WV2 init: ready handshake timed out after 15 s");
-            throw new InvalidOperationException(
-                "Terminal renderer never reported ready. The WebView2 page may have failed to load — check the logs for NavigationCompleted status.");
+            InitGate.Release();
         }
-        ApplyTheme();
-        ApplyFontSize();
-        _initialized = true;
     }
 
     private void ApplyFontSize()
