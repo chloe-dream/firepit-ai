@@ -23,6 +23,8 @@
     <ApplicationIcon>firepit.ico</ApplicationIcon>
     <!-- Drop NuGet-shipped XML doc files from publish output. -->
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+    <!-- Publish always lands at <repo>/bin/<rid>/ regardless of caller. -->
+    <PublishDir>$(MSBuildThisFileDirectory)..\..\bin\$(RuntimeIdentifier)\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

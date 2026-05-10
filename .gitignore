@@ -58,5 +58,4 @@ coverage/
 *~
 *.stackdump
 
-# Inno Setup compiler output
-installer/output/
+# (Inno Setup output now lives under bin/installer — covered by `bin/` above)

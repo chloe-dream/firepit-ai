@@ -52,7 +52,6 @@ jobs:
           --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -o publish/win-x64
 
       - name: Compute version
         id: version
@@ -67,7 +66,7 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path publish/win-x64/* `
+            -Path bin/win-x64/* `
             -DestinationPath "firepit-${{ steps.version.outputs.version }}-win-x64.zip"
 
       - name: Install Inno Setup
@@ -87,7 +86,7 @@ jobs:
         with:
           files: |
             firepit-${{ steps.version.outputs.version }}-win-x64.zip
-            installer/output/FirepitSetup-${{ steps.version.outputs.numeric }}-win-x64.exe
+            bin/installer/FirepitSetup-${{ steps.version.outputs.numeric }}-win-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

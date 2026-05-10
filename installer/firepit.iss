@@ -5,11 +5,11 @@
 ;         /DAppVersion=1.12.0 on the ISCC command line — used by CI.)
 ;
 ; Inputs (must exist before ISCC runs):
-;   - publish/win-x64/Firepit.exe   (from `dotnet publish` single-file)
+;   - bin/win-x64/Firepit.exe   (from `dotnet publish` single-file)
 ;   - src/Firepit/firepit.ico
 ;
 ; Output:
-;   - installer/output/FirepitSetup-<version>-win-x64.exe
+;   - bin/installer/FirepitSetup-<version>-win-x64.exe
 
 #ifndef AppVersion
   #define AppVersion "0.1.0"
@@ -30,7 +30,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-OutputDir=output
+OutputDir=..\bin\installer
 OutputBaseFilename=FirepitSetup-{#AppVersion}-win-x64
 Compression=lzma2/ultra
 SolidCompression=yes
@@ -49,7 +49,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
 
 [Files]
-Source: "..\publish\win-x64\Firepit.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\win-x64\Firepit.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Firepit"; Filename: "{app}\Firepit.exe"
