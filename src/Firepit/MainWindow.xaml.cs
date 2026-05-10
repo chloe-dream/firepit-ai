@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
 using Firepit.Core.Mcp;
+using Firepit.Core.ProjectConfig;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
 using Firepit.Core.Secrets;
@@ -37,6 +38,8 @@ public partial class MainWindow : Window
     private readonly IAgentMcpProjector _mcpProjector;
     private readonly ISecretResolver _secretResolver;
     private readonly IStateStore _stateStore;
+    private readonly IProjectConfigStore _projectConfigStore = new JsonProjectConfigStore();
+    private int _pendingMigrationCount;
 
     // Drag-reorder state. _dragSource is the TabItem under cursor on
     // PreviewMouseDown; cleared on drag-start so the same press can't fire
@@ -57,13 +60,16 @@ public partial class MainWindow : Window
         _settingsStore = new JsonSettingsStore();
         _settings = _settingsStore.Load();
         ApplyChromeMetricsFromResources();
+
+        _stateStore = new JsonStateStore();
+        RunProjectConfigMigrationIfNeeded();
+
         _quickLinks = BuildQuickLinkService(_settings);
         _secretResolver = new CompositeSecretResolver(
             new EnvironmentSecretProvider(),
             new CredentialManagerSecretProvider());
-        _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver);
+        _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver, _projectConfigStore.Load);
         _mcpProjector = new ClaudeCodeMcpProjector();
-        _stateStore = new JsonStateStore();
 
         PickerList.ItemsSource = _pickerItems;
 
@@ -147,6 +153,11 @@ public partial class MainWindow : Window
         {
             RestoreTabsFromState();
         }
+        if (_pendingMigrationCount > 0)
+        {
+            ShowToast($"Migrated {_pendingMigrationCount} project(s) to .firepit/config.json");
+            _pendingMigrationCount = 0;
+        }
     }
 
     private void ReloadProjectList()
@@ -205,16 +216,76 @@ public partial class MainWindow : Window
             .Select(MapLinkSetting)
             .ToArray();
 
-        var perProject = (settings.Projects ?? [])
+        var legacyPerProject = (settings.Projects ?? [])
             .Where(p => p.QuickLinks is { Count: > 0 })
             .ToDictionary(p => p.Path, p => p.QuickLinks!, StringComparer.OrdinalIgnoreCase);
 
         return new QuickLinkService(
             globalDefaults: globals,
+            // Per-project .firepit/config.json wins over the legacy
+            // settings.Projects[].QuickLinks. Migration strips the legacy
+            // entries on first launch — the fallback only matters during the
+            // transition or when a user hand-edits settings.json.
             projectOverrides: ctx =>
-                perProject.TryGetValue(ctx.Path, out var overrides)
+            {
+                var projectConfig = _projectConfigStore.Load(ctx.Path);
+                if (projectConfig?.QuickLinks is { Count: > 0 } links)
+                {
+                    return links.Select(MapProjectQuickLink).ToArray();
+                }
+                return legacyPerProject.TryGetValue(ctx.Path, out var overrides)
                     ? overrides.Select(MapLinkSetting).ToArray()
-                    : []);
+                    : [];
+            });
+    }
+
+    private static QuickLinkEntry MapProjectQuickLink(ProjectQuickLink source) => new(
+        Name: source.Name,
+        UrlTemplate: source.Url,
+        Target: source.Target == QuickLinkTargetSetting.External ? QuickLinkTarget.External : QuickLinkTarget.SubTab,
+        Icon: source.Icon,
+        Disabled: source.Disabled ?? false);
+
+    private void RunProjectConfigMigrationIfNeeded()
+    {
+        AppState state;
+        try
+        {
+            state = _stateStore.Load();
+        }
+        catch
+        {
+            // Couldn't read state — skip migration this launch, retry next time.
+            return;
+        }
+
+        if (state.ProjectConfigMigrationDone) return;
+        if (_settings.Projects is null || _settings.Projects.Count == 0)
+        {
+            // No legacy entries to migrate — flag as done so we don't keep checking.
+            try { _stateStore.Save(state with { ProjectConfigMigrationDone = true }); }
+            catch { /* best effort */ }
+            return;
+        }
+
+        try
+        {
+            var migrator = new ProjectConfigMigrator(_projectConfigStore);
+            var result = migrator.Migrate(_settings);
+            if (result.MigratedCount > 0)
+            {
+                ProjectConfigMigrator.BackupSettingsFile(((JsonSettingsStore)_settingsStore).SettingsPath);
+                _settingsStore.Save(result.Settings);
+                _settings = result.Settings;
+                _pendingMigrationCount = result.MigratedCount;
+                Log.Information("Migrated {Count} project(s) to .firepit/config.json", result.MigratedCount);
+            }
+            _stateStore.Save(state with { ProjectConfigMigrationDone = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Project-config migration failed; will retry next launch");
+        }
     }
 
     private static QuickLinkEntry MapLinkSetting(QuickLinkSettings source) => new(

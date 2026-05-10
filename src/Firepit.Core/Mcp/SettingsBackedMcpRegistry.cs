@@ -1,3 +1,4 @@
+using Firepit.Core.ProjectConfig;
 using Firepit.Core.Projects;
 using Firepit.Core.Secrets;
 using Firepit.Core.Settings;
@@ -8,13 +9,18 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
 {
     private readonly IReadOnlyList<McpRegistryEntry> _entries;
     private readonly IReadOnlyDictionary<string, McpRegistryEntry> _byId;
-    private readonly IReadOnlyDictionary<string, (IReadOnlyList<string> Active, IReadOnlyDictionary<string, McpOverride> Overrides)> _projectActivations;
+    private readonly IReadOnlyDictionary<string, (IReadOnlyList<string> Active, IReadOnlyDictionary<string, McpOverride> Overrides)> _legacyProjectActivations;
+    private readonly Func<string, ProjectConfig.ProjectConfig?>? _projectConfigLoader;
     private readonly ISecretResolver _resolver;
 
-    public SettingsBackedMcpRegistry(FirepitSettings settings, ISecretResolver resolver)
+    public SettingsBackedMcpRegistry(
+        FirepitSettings settings,
+        ISecretResolver resolver,
+        Func<string, ProjectConfig.ProjectConfig?>? projectConfigLoader = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+        _projectConfigLoader = projectConfigLoader;
 
         _entries = (settings.McpServers ?? new Dictionary<string, McpServerSettings>())
             .Select(kvp => MapEntry(kvp.Key, kvp.Value))
@@ -35,7 +41,7 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
                     StringComparer.OrdinalIgnoreCase);
             projectMap[project.Path] = (project.McpServers, overrides);
         }
-        _projectActivations = projectMap;
+        _legacyProjectActivations = projectMap;
     }
 
     public IReadOnlyList<McpRegistryEntry> All => _entries;
@@ -45,7 +51,18 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
     public IReadOnlyList<ResolvedMcpServer> ResolveForProject(ProjectContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (!_projectActivations.TryGetValue(context.Path, out var activation))
+
+        // Per-project .firepit/config.json wins over the legacy
+        // settings.Projects[] activations. After Phase 1's migration runs the
+        // legacy entries should be stripped, but we keep the fallback so a
+        // hand-edited settings.json continues to work during the transition.
+        var projectConfig = _projectConfigLoader?.Invoke(context.Path);
+        if (projectConfig?.McpActivations is { Count: > 0 } activations)
+        {
+            return ResolveActivations(activations);
+        }
+
+        if (!_legacyProjectActivations.TryGetValue(context.Path, out var activation))
         {
             return [];
         }
@@ -59,6 +76,24 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
             }
             activation.Overrides.TryGetValue(id, out var overrideEntry);
             resolved.Add(Resolve(entry, overrideEntry));
+        }
+        return resolved;
+    }
+
+    private IReadOnlyList<ResolvedMcpServer> ResolveActivations(IReadOnlyList<ProjectMcpActivation> activations)
+    {
+        var resolved = new List<ResolvedMcpServer>(activations.Count);
+        foreach (var act in activations)
+        {
+            if (!_byId.TryGetValue(act.Id, out var entry))
+            {
+                continue;
+            }
+            var ov = new McpOverride(
+                Args:        act.ArgOverrides,
+                Environment: act.EnvOverrides,
+                Headers:     act.HeaderOverrides);
+            resolved.Add(Resolve(entry, ov));
         }
         return resolved;
     }
