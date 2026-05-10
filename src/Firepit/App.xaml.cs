@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using Firepit.Core.Settings;
 using Firepit.Singleton;
 using Serilog;
 
@@ -17,6 +18,20 @@ public partial class App : Application
         HookUnhandledExceptions();
 
         Log.Information("Firepit starting (pid {Pid})", Environment.ProcessId);
+
+        // Load settings once at startup so font-scaling tokens are written into
+        // Application.Resources BEFORE any Window XAML resolves StaticResource lookups.
+        // MainWindow re-loads settings (cheap — same JSON file) for its own state;
+        // we only need the font knob here.
+        try
+        {
+            var initial = new JsonSettingsStore().Load();
+            ApplyFontResources(initial.Ui?.ResolvedFontSize ?? UiSettings.DefaultFontSize);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not pre-load settings for font tokens — defaults stay in effect");
+        }
 
         _guard = new SingletonGuard();
 
@@ -62,6 +77,20 @@ public partial class App : Application
         _guard?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
+    }
+
+    public static void ApplyFontResources(int fontSize)
+    {
+        fontSize = Math.Clamp(fontSize, UiSettings.MinFontSize, UiSettings.MaxFontSize);
+        var scale = fontSize / (double)UiSettings.DefaultFontSize;
+        var r = Current.Resources;
+        r["BaseFontSize"]              = (double)fontSize;
+        r["SmallFontSize"]             = (double)Math.Max(UiSettings.MinFontSize - 1, fontSize - 1);
+        r["MediumFontSize"]            = (double)(fontSize + 1);
+        r["TitleFontSize"]             = (double)(fontSize + 2);
+        r["CaptionPixelHeight"]        = 36.0 * scale;
+        r["DialogCaptionPixelHeight"]  = 32.0 * scale;
+        r["TabItemPixelHeight"]        = 36.0 * scale;
     }
 
     private static void ConfigureLogging()

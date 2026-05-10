@@ -17,12 +17,14 @@ public sealed class WebView2TerminalView : ITerminalView
     private readonly WebView2 _webView = new();
     private readonly TaskCompletionSource _readyTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TerminalThemeSettings _theme;
+    private readonly int _fontSize;
     private bool _initialized;
     private bool _disposed;
 
-    public WebView2TerminalView(TerminalThemeSettings? theme = null)
+    public WebView2TerminalView(TerminalThemeSettings? theme = null, int fontSize = 14)
     {
         _theme = (theme ?? TerminalThemeSettings.Defaults).Resolved();
+        _fontSize = fontSize;
     }
 
     public event EventHandler<ReadOnlyMemory<byte>>? InputReceived;
@@ -83,7 +85,14 @@ public sealed class WebView2TerminalView : ITerminalView
                 "Terminal renderer never reported ready. The WebView2 page may have failed to load — check the logs for NavigationCompleted status.");
         }
         ApplyTheme();
+        ApplyFontSize();
         _initialized = true;
+    }
+
+    private void ApplyFontSize()
+    {
+        var payload = $"{{\"type\":\"font\",\"size\":{_fontSize}}}";
+        _webView.CoreWebView2.PostWebMessageAsString(payload);
     }
 
     private void ApplyTheme()

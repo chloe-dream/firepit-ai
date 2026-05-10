@@ -6,8 +6,12 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <!-- Tokens MUST come first so CaptionButtons.xaml can resolve
+                     {StaticResource CaptionPixelHeight} etc. via forward lookup. -->
+                <ResourceDictionary Source="Resources/Tokens.xaml" />
                 <ResourceDictionary Source="Resources/Icons.xaml" />
                 <ResourceDictionary Source="Resources/CaptionButtons.xaml" />
+                <ResourceDictionary Source="Resources/Common.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

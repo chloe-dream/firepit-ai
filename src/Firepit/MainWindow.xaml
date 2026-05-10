@@ -10,6 +10,9 @@
         BorderBrush="#332B22"
         BorderThickness="1">
     <shell:WindowChrome.WindowChrome>
+        <!-- CaptionHeight is patched at runtime via WindowChrome.GetWindowChrome
+             from CaptionPixelHeight (App.xaml.cs). The XAML literal is the
+             design-time / scale=1 fallback only. -->
         <shell:WindowChrome
             CaptionHeight="36"
             CornerRadius="0"
@@ -22,7 +25,7 @@
     </Window.InputBindings>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="36" />
+            <RowDefinition x:Name="CaptionRow" Height="36" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -36,13 +39,11 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Path Grid.Column="0"
-                  Width="14" Height="18"
-                  Margin="12,0,8,0"
-                  VerticalAlignment="Center"
-                  Stretch="Uniform"
-                  Fill="#F5C97B"
-                  Data="M 8,1 C 11,5 12,8 11,11 C 13,9 14,12 14,14 C 14,17 11,18 8,18 C 5,18 2,17 2,14 C 2,12 3,9 5,11 C 4,8 5,5 8,1 Z" />
+            <Button Grid.Column="0"
+                    x:Name="AboutButton"
+                    Style="{StaticResource AppIconButton}"
+                    Click="OnAboutClick"
+                    ToolTip="About Firepit" />
 
             <TabControl Grid.Column="1"
                         x:Name="Tabs"
@@ -65,45 +66,56 @@
                     <Style TargetType="TabItem">
                         <Setter Property="Foreground" Value="#A89F92" />
                         <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
-                        <Setter Property="FontSize" Value="12" />
+                        <Setter Property="FontSize" Value="{DynamicResource BaseFontSize}" />
                         <Setter Property="Background" Value="Transparent" />
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="Padding" Value="12,0,4,0" />
                         <Setter Property="MinWidth" Value="80" />
                         <Setter Property="MaxWidth" Value="220" />
-                        <Setter Property="Height" Value="36" />
+                        <Setter Property="Height" Value="{DynamicResource TabItemPixelHeight}" />
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="TabItem">
-                                    <Border x:Name="Bd"
-                                            Padding="{TemplateBinding Padding}"
-                                            Background="{TemplateBinding Background}"
-                                            CornerRadius="0"
-                                            BorderThickness="0,2,0,0"
-                                            BorderBrush="Transparent"
-                                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <ContentPresenter Grid.Column="0"
-                                                              ContentSource="Header"
-                                                              VerticalAlignment="Center"
-                                                              HorizontalAlignment="Left" />
-                                            <Button x:Name="CloseBtn"
-                                                    Grid.Column="1"
-                                                    Style="{StaticResource TabCloseButton}"
-                                                    Margin="6,0,0,0"
-                                                    Visibility="Hidden"
-                                                    Click="OnTabCloseClick"
-                                                    Tag="{Binding RelativeSource={RelativeSource TemplatedParent}}" />
-                                        </Grid>
-                                    </Border>
+                                    <!-- Selected-state top accent is an absolute-positioned overlay,
+                                         not a Border.BorderThickness. A border thickness reserves
+                                         layout space and the header text would shift down 2px when
+                                         the tab is selected. The accent rectangle lives OUTSIDE
+                                         the padded inner border so it spans the full tab width
+                                         (TabItem.Padding="12,0,4,0" would otherwise indent it). -->
+                                    <Grid shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                                        <Border x:Name="Bd"
+                                                Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                CornerRadius="0">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Grid.Column="0"
+                                                                  ContentSource="Header"
+                                                                  VerticalAlignment="Center"
+                                                                  HorizontalAlignment="Left" />
+                                                <Button x:Name="CloseBtn"
+                                                        Grid.Column="1"
+                                                        Style="{StaticResource TabCloseButton}"
+                                                        Margin="6,0,0,0"
+                                                        Visibility="Hidden"
+                                                        Click="OnTabCloseClick"
+                                                        Tag="{Binding RelativeSource={RelativeSource TemplatedParent}}" />
+                                            </Grid>
+                                        </Border>
+                                        <Rectangle x:Name="TopAccent"
+                                                   Height="2"
+                                                   VerticalAlignment="Top"
+                                                   HorizontalAlignment="Stretch"
+                                                   Fill="Transparent"
+                                                   IsHitTestVisible="False" />
+                                    </Grid>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
                                             <Setter Property="Background" Value="#1A1612" TargetName="Bd" />
-                                            <Setter Property="BorderBrush" Value="#F5C97B" TargetName="Bd" />
+                                            <Setter Property="Fill" Value="#F5C97B" TargetName="TopAccent" />
                                             <Setter Property="Foreground" Value="#E8E2D8" />
                                             <Setter Property="Visibility" Value="Visible" TargetName="CloseBtn" />
                                         </Trigger>
@@ -159,7 +171,7 @@
                            VerticalAlignment="Center"
                            Foreground="#A89F92"
                            FontFamily="Cascadia Code, Consolas, Courier New"
-                           FontSize="14">
+                           FontSize="{DynamicResource TitleFontSize}">
                     <Run Text="The firepit is cold. " />
                     <Hyperlink Foreground="#F5C97B" TextDecorations="None" Click="OnNewTabClick">Gather a project</Hyperlink>
                     <Run Text=" to begin." />
@@ -179,7 +191,7 @@
                     <TextBlock x:Name="ToastText"
                                Foreground="#E8E2D8"
                                FontFamily="Cascadia Code, Consolas, Courier New"
-                               FontSize="12" />
+                               FontSize="{DynamicResource BaseFontSize}" />
                 </Border>
 
             <ContentControl x:Name="TabContentHost"
@@ -215,7 +227,7 @@
                                  BorderThickness="1"
                                  CaretBrush="#E8E2D8"
                                  FontFamily="Cascadia Code, Consolas, Courier New"
-                                 FontSize="12"
+                                 FontSize="{DynamicResource BaseFontSize}"
                                  Padding="8,5"
                                  TextChanged="OnPickerSearchChanged"
                                  KeyDown="OnPickerSearchKeyDown" />
@@ -226,6 +238,9 @@
                              Background="Transparent"
                              BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="False"
+                             VirtualizingPanel.IsVirtualizing="False"
                              KeyDown="OnPickerListKeyDown">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
@@ -269,19 +284,19 @@
                                                    Text="{Binding Name}"
                                                    Foreground="{Binding NameBrush}"
                                                    FontFamily="Cascadia Code, Consolas, Courier New"
-                                                   FontSize="13" />
+                                                   FontSize="{DynamicResource MediumFontSize}" />
                                         <TextBlock Grid.Column="1"
                                                    Text="{Binding Status}"
                                                    Foreground="#8C7A5C"
                                                    FontFamily="Cascadia Code, Consolas, Courier New"
-                                                   FontSize="10"
+                                                   FontSize="{DynamicResource SmallFontSize}"
                                                    VerticalAlignment="Center" />
                                     </Grid>
                                     <TextBlock Grid.Row="1"
                                                Text="{Binding Path}"
                                                Foreground="#6B6258"
                                                FontFamily="Cascadia Code, Consolas, Courier New"
-                                               FontSize="10"
+                                               FontSize="{DynamicResource SmallFontSize}"
                                                TextTrimming="CharacterEllipsis"
                                                Margin="0,2,0,0" />
                                 </Grid>
@@ -301,7 +316,7 @@
                                     <Setter Property="BorderThickness" Value="0" />
                                     <Setter Property="Foreground" Value="#A89F92" />
                                     <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
-                                    <Setter Property="FontSize" Value="12" />
+                                    <Setter Property="FontSize" Value="{DynamicResource BaseFontSize}" />
                                     <Setter Property="Padding" Value="6,8" />
                                     <Setter Property="Cursor" Value="Hand" />
                                     <Setter Property="Template">

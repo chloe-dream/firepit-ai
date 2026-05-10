@@ -9,6 +9,7 @@ public sealed record FirepitSettings(
     TabSettings Tabs,
     ShellsSettings Shells,
     TerminalThemeSettings? Terminal = null,
+    UiSettings? Ui = null,
     IReadOnlyDictionary<string, McpServerSettings>? McpServers = null,
     IReadOnlyList<QuickLinkSettings>? QuickLinks = null,
     IReadOnlyList<ProjectSettings>? Projects = null)
@@ -22,11 +23,32 @@ public sealed record FirepitSettings(
         Tabs: TabSettings.Defaults,
         Shells: ShellsSettings.Defaults,
         Terminal: TerminalThemeSettings.Defaults,
+        Ui: UiSettings.Defaults,
         QuickLinks:
         [
             new QuickLinkSettings("GitHub",   "https://github.com/chloe-dream/{projectName}", QuickLinkTargetSetting.External, Icon: "github"),
             new QuickLinkSettings("Fishbowl", "https://localhost:7180/p/{projectName}",       QuickLinkTargetSetting.External, Icon: "fishbowl"),
         ]);
+}
+
+/// <summary>
+/// One knob — UI chrome and the embedded terminal font scale together.
+/// Range clamp [10, 22] is enforced in <see cref="ResolvedFontSize"/>.
+/// </summary>
+public sealed record UiSettings(int FontSize)
+{
+    public const int MinFontSize = 10;
+    public const int MaxFontSize = 22;
+    public const int DefaultFontSize = 12;
+
+    public static readonly UiSettings Defaults = new(DefaultFontSize);
+
+    // Computed property — must NOT be serialized. Without [JsonIgnore] the
+    // source-gen serializer treats it as a public read-only property worth
+    // writing, and settings.json ends up with a redundant "resolvedFontSize"
+    // field that confuses round-tripping.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int ResolvedFontSize => Math.Clamp(FontSize, MinFontSize, MaxFontSize);
 }
 
 /// <summary>

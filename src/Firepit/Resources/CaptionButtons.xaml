@@ -2,12 +2,16 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework">
 
-    <!-- Common style: square 46x32 like Edge/Terminal -->
+    <!-- Square caption button. Both Width AND Height bound to the caption-bar
+         token so the button stays square regardless of how the parent Stack-
+         Panel wants to size it. (Stretch alone is flaky inside a horizontal
+         StackPanel, which is why the About dialog sets W+H explicitly inline
+         and the same is now baked into the style.) -->
     <Style x:Key="CaptionButtonBase" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Width" Value="46" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Width" Value="{DynamicResource CaptionPixelHeight}" />
+        <Setter Property="Height" Value="{DynamicResource CaptionPixelHeight}" />
         <Setter Property="Foreground" Value="#A89F92" />
         <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
         <Setter Property="VerticalAlignment" Value="Top" />
@@ -84,17 +88,82 @@
         </Setter>
     </Style>
 
-    <Style x:Key="NewTabButton" TargetType="Button" BasedOn="{StaticResource CaptionButtonBase}">
-        <Setter Property="Width" Value="36" />
-        <Setter Property="Height" Value="36" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-        <Setter Property="Content">
+    <!-- App-icon button left of the tabs. Square caption-height tile.
+         Hover affordance is path-only (gold brightens to amber); no background
+         tile change because a left-edge background highlight reads as a
+         selected state, not a hover. -->
+    <Style x:Key="AppIconButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Width" Value="{DynamicResource CaptionPixelHeight}" />
+        <Setter Property="Height" Value="{DynamicResource CaptionPixelHeight}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
             <Setter.Value>
-                <Path Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"
-                      StrokeThickness="1.2"
-                      StrokeStartLineCap="Round"
-                      StrokeEndLineCap="Round"
-                      Data="M 0,5 L 10,5 M 5,0 L 5,10" />
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent" SnapsToDevicePixels="True">
+                        <Path x:Name="Flame"
+                              Width="14" Height="18"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Stretch="Uniform"
+                              Fill="#F5C97B"
+                              Data="M 8,1 C 11,5 12,8 11,11 C 13,9 14,12 14,14 C 14,17 11,18 8,18 C 5,18 2,17 2,14 C 2,12 3,9 5,11 C 4,8 5,5 8,1 Z" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Fill" Value="#FFD89A" TargetName="Flame" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Fill" Value="#FFE8B8" TargetName="Flame" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- New-tab button: square, full caption height, circular hover halo. -->
+    <Style x:Key="NewTabButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Width" Value="{DynamicResource CaptionPixelHeight}" />
+        <Setter Property="Height" Value="{DynamicResource CaptionPixelHeight}" />
+        <Setter Property="Foreground" Value="#A89F92" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <!-- Inset circular hover halo: smaller than the click-target square so it
+                             reads as a tap-target, not as a tile. -->
+                        <Ellipse x:Name="Halo"
+                                 Width="24" Height="24"
+                                 Fill="Transparent"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                        <Path Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.3"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Data="M 0,5 L 10,5 M 5,0 L 5,10" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Fill" Value="#221C16" TargetName="Halo" />
+                            <Setter Property="Foreground" Value="#E8E2D8" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Fill" Value="#2A211A" TargetName="Halo" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>

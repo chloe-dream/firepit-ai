@@ -10,6 +10,7 @@ public partial class SettingsDialog : Window
 {
     private readonly ISettingsStore _store;
     private FirepitSettings _settings;
+    private int _currentFontSize;
 
     public SettingsDialog(ISettingsStore store)
     {
@@ -17,10 +18,40 @@ public partial class SettingsDialog : Window
         _store = store;
         _settings = store.Load();
         RootBox.Text = _settings.ProjectsRoot;
+        _currentFontSize = (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize;
+        UpdateFontSizeDisplay();
+        ApplyChromeMetricsFromResources();
         SourceInitialized += (_, _) => WindowDarkMode.EnableForWindow(this);
     }
 
     public FirepitSettings? Result { get; private set; }
+
+    private void ApplyChromeMetricsFromResources()
+    {
+        if (TryFindResource("DialogCaptionPixelHeight") is double capH)
+        {
+            CaptionRow.Height = new GridLength(capH);
+            var chrome = System.Windows.Shell.WindowChrome.GetWindowChrome(this);
+            if (chrome is not null) chrome.CaptionHeight = capH;
+        }
+    }
+
+    private void UpdateFontSizeDisplay()
+    {
+        FontSizeValue.Text = _currentFontSize.ToString();
+        FontSizeMinus.IsEnabled = _currentFontSize > UiSettings.MinFontSize;
+        FontSizePlus.IsEnabled = _currentFontSize < UiSettings.MaxFontSize;
+    }
+
+    private void OnFontSizeMinus(object sender, RoutedEventArgs e)
+    {
+        if (_currentFontSize > UiSettings.MinFontSize) { _currentFontSize--; UpdateFontSizeDisplay(); }
+    }
+
+    private void OnFontSizePlus(object sender, RoutedEventArgs e)
+    {
+        if (_currentFontSize < UiSettings.MaxFontSize) { _currentFontSize++; UpdateFontSizeDisplay(); }
+    }
 
     private void OnBrowseClick(object sender, RoutedEventArgs e)
     {
@@ -37,7 +68,11 @@ public partial class SettingsDialog : Window
 
     private void OnSaveClick(object sender, RoutedEventArgs e)
     {
-        var updated = _settings with { ProjectsRoot = RootBox.Text.Trim() };
+        var updated = _settings with
+        {
+            ProjectsRoot = RootBox.Text.Trim(),
+            Ui = new UiSettings(_currentFontSize),
+        };
         try
         {
             _store.Save(updated);

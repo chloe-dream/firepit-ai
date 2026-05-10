@@ -212,6 +212,16 @@
                         }
                         break;
                     }
+                    case 'font': {
+                        // V1.13 — single-knob font scaling. Host posts the new
+                        // size, we apply it to xterm and refit so the cell
+                        // metrics + cols/rows match what the host expects.
+                        if (typeof message.size === 'number' && message.size >= 6 && message.size <= 64) {
+                            term.options.fontSize = message.size;
+                            try { fitAddon.fit(); } catch (e) { /* ignore */ }
+                        }
+                        break;
+                    }
                     case 'paste': {
                         if (typeof message.text === 'string') {
                             term.paste(message.text);

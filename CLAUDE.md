@@ -170,6 +170,18 @@ When in doubt, defer: any of these can land after V1 prototype runs.
 
 ---
 
+## Running the App During Development
+
+Use **`./run.ps1`** (or the **`/run`** slash command) — never invoke `dotnet
+build` + `Firepit.exe` manually. The script kills any running instance,
+builds, and launches the canonical exe at `src/Firepit/bin/{Debug|Release}/Firepit.exe`.
+
+`Directory.Build.props` sets `AppendTargetFrameworkToOutputPath=false`, but
+old TFM-suffixed paths (`bin/Release/net10.0-windows10.0.17763.0/Firepit.exe`)
+still exist on disk from before V1.12 and have caused "I'm running a stale
+build" confusion. `run.ps1` always points at the right one. `./run.ps1 -Clean`
+wipes those stale paths.
+
 ## Working with This Codebase
 
 - Read `SPEC.md` first if you haven't. It is the contract.

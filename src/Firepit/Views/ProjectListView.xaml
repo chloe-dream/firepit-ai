@@ -12,7 +12,7 @@
             <TextBlock Text="The firepit"
                        Foreground="#E8E2D8"
                        FontFamily="Cascadia Code, Consolas, Courier New"
-                       FontSize="13"
+                       FontSize="{DynamicResource MediumFontSize}"
                        FontWeight="SemiBold" />
         </Border>
 

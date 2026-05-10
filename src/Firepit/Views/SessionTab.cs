@@ -33,6 +33,7 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly IMcpRegistry? _mcpRegistry;
     private readonly IAgentMcpProjector? _mcpProjector;
     private readonly TerminalThemeSettings? _terminalTheme;
+    private readonly int _terminalFontSize;
     private readonly ActivityDetector _detector;
     private readonly Grid _content;
     private readonly Grid _terminalArea;
@@ -57,7 +58,8 @@ public sealed class SessionTab : IAsyncDisposable
         IMcpRegistry? mcpRegistry = null,
         IAgentMcpProjector? mcpProjector = null,
         IActivityClock? clock = null,
-        TerminalThemeSettings? terminalTheme = null)
+        TerminalThemeSettings? terminalTheme = null,
+        int terminalFontSize = 14)
     {
         Context = context;
         _adapter = adapter;
@@ -65,6 +67,7 @@ public sealed class SessionTab : IAsyncDisposable
         _mcpRegistry = mcpRegistry;
         _mcpProjector = mcpProjector;
         _terminalTheme = terminalTheme;
+        _terminalFontSize = terminalFontSize;
 
         _detector = new ActivityDetector(clock ?? new SystemActivityClock());
         _detector.StateChanged += OnStateChanged;
@@ -74,7 +77,7 @@ public sealed class SessionTab : IAsyncDisposable
             Text = $"Igniting {context.Name}…",
             Foreground = StateColors.Brush(SessionState.Igniting),
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
-            FontSize = 14,
+            FontSize = ResolveFontSize("TitleFontSize", 14),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -209,7 +212,13 @@ public sealed class SessionTab : IAsyncDisposable
             if (_terminalView is null)
             {
                 Log.Debug("Creating WebView2TerminalView for {Project}", Context.Name);
-                _terminalView = new WebView2TerminalView(_terminalTheme);
+                _terminalView = new WebView2TerminalView(_terminalTheme, _terminalFontSize);
+                // Hidden until first PTY-output. WebView2 is a HwndHost — its
+                // native window always renders ON TOP of any sibling WPF
+                // element regardless of ZIndex (the airspace rule). Without
+                // hiding it, the spinner is technically present but invisible
+                // because the WebView2 hwnd paints over it.
+                _terminalView.Element.Visibility = Visibility.Hidden;
                 _terminalArea.Children.Add(_terminalView.Element);
                 await _terminalView.InitializeAsync(ct);
                 _terminalView.InputReceived += OnInputReceived;
@@ -373,12 +382,16 @@ public sealed class SessionTab : IAsyncDisposable
         {
             HideRekindleAffordance();
         }
-        // Hide the load spinner when output settles (Embers) or the process exits (Dead).
-        // "Output stopped streaming" is the closest transparent signal we have to
-        // "Claude Code finished its boot banner and is waiting for input" without
-        // peeking at the PTY content.
-        if (state == SessionState.Embers || state == SessionState.Dead)
+        // First PTY output → boot done. Reveal WebView2 (was hidden so the
+        // spinner could be visible) and hide the spinner. Burning, Embers, and
+        // Dead all imply at least one byte arrived, so any of them is a valid
+        // reveal trigger.
+        if (state is SessionState.Burning or SessionState.Embers or SessionState.Dead)
         {
+            if (_terminalView is not null && _terminalView.Element.Visibility != Visibility.Visible)
+            {
+                _terminalView.Element.Visibility = Visibility.Visible;
+            }
             HideLoadingIndicator();
         }
     }
@@ -460,6 +473,9 @@ public sealed class SessionTab : IAsyncDisposable
         }
     }
 
+    private static double ResolveFontSize(string key, double fallback) =>
+        Application.Current?.TryFindResource(key) is double d ? d : fallback;
+
     private static (StackPanel Panel, RotateTransform Rotate, Storyboard Story) BuildLoadingIndicator(string projectName)
     {
         // Single source of truth for rotation center: RotateTransform's explicit
@@ -485,7 +501,7 @@ public sealed class SessionTab : IAsyncDisposable
             Text = $"Igniting {projectName}…",
             Foreground = StateColors.Brush(SessionState.Igniting),
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
-            FontSize = 13,
+            FontSize = ResolveFontSize("MediumFontSize", 13),
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 12, 0, 0),
         };
@@ -556,7 +572,7 @@ public sealed class SessionTab : IAsyncDisposable
             Text = "This session went out. Click to restart.",
             Foreground = StateColors.Brush(SessionState.Igniting),
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
-            FontSize = 14,
+            FontSize = ResolveFontSize("TitleFontSize", 14),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Padding = new Thickness(20, 12, 20, 12),

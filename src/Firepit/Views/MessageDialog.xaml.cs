@@ -20,6 +20,12 @@ public partial class MessageDialog : Window
         {
             SecondaryButton.Content = secondaryLabel;
         }
+        if (TryFindResource("DialogCaptionPixelHeight") is double capH)
+        {
+            CaptionRow.Height = new GridLength(capH);
+            var chrome = System.Windows.Shell.WindowChrome.GetWindowChrome(this);
+            if (chrome is not null) chrome.CaptionHeight = capH;
+        }
         SourceInitialized += (_, _) => WindowDarkMode.EnableForWindow(this);
     }
 

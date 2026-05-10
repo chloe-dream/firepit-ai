@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Firepit settings"
-        Height="252" Width="540"
+        SizeToContent="Height"
+        Width="540"
         Background="#1A1612"
         Icon="/firepit.ico"
         BorderBrush="#332B22"
@@ -12,6 +13,7 @@
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <shell:WindowChrome.WindowChrome>
+        <!-- CaptionHeight patched at runtime; see SettingsDialog.xaml.cs. -->
         <shell:WindowChrome
             CaptionHeight="32"
             CornerRadius="0"
@@ -25,7 +27,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Foreground" Value="#A89F92" />
             <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
-            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontSize" Value="{DynamicResource BaseFontSize}" />
             <Setter Property="Padding" Value="14,7" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -75,8 +77,8 @@
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="32" />
-            <RowDefinition Height="*" />
+            <RowDefinition x:Name="CaptionRow" Height="32" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Custom dark caption -->
@@ -89,12 +91,14 @@
                        Text="Settings"
                        Foreground="#A89F92"
                        FontFamily="Cascadia Code, Consolas, Courier New"
-                       FontSize="12"
+                       FontSize="{DynamicResource BaseFontSize}"
                        VerticalAlignment="Center"
                        Margin="14,0,0,0" />
             <Button Grid.Column="1"
                     x:Name="DialogCloseButton"
                     Style="{StaticResource CaptionCloseButton}"
+                    Width="{DynamicResource DialogCaptionPixelHeight}"
+                    Height="{DynamicResource DialogCaptionPixelHeight}"
                     Click="OnCloseClick"
                     ToolTip="Close" />
         </Grid>
@@ -104,7 +108,9 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -112,7 +118,7 @@
                        Text="Projects root"
                        Foreground="#E8E2D8"
                        FontFamily="Cascadia Code, Consolas, Courier New"
-                       FontSize="13" />
+                       FontSize="{DynamicResource MediumFontSize}" />
 
             <Grid Grid.Row="1" Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
@@ -127,6 +133,7 @@
                          BorderThickness="1"
                          CaretBrush="#E8E2D8"
                          FontFamily="Cascadia Code, Consolas, Courier New"
+                         FontSize="{DynamicResource BaseFontSize}"
                          Padding="8,6" />
                 <Button x:Name="BrowseButton"
                         Grid.Column="1"
@@ -137,14 +144,54 @@
             </Grid>
 
             <TextBlock Grid.Row="2"
+                       Text="Font size"
+                       Foreground="#E8E2D8"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource MediumFontSize}"
+                       Margin="0,18,0,0" />
+
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                <Button x:Name="FontSizeMinus"
+                        Content="−"
+                        Style="{StaticResource DialogInlineButton}"
+                        MinWidth="36"
+                        Click="OnFontSizeMinus" />
+                <Border Background="#15110D"
+                        BorderBrush="#332B22"
+                        BorderThickness="1"
+                        Padding="14,4"
+                        Margin="6,0"
+                        MinWidth="60">
+                    <TextBlock x:Name="FontSizeValue"
+                               Text="12"
+                               Foreground="#E8E2D8"
+                               FontFamily="Cascadia Code, Consolas, Courier New"
+                               FontSize="{DynamicResource MediumFontSize}"
+                               TextAlignment="Center"
+                               VerticalAlignment="Center" />
+                </Border>
+                <Button x:Name="FontSizePlus"
+                        Content="+"
+                        Style="{StaticResource DialogInlineButton}"
+                        MinWidth="36"
+                        Click="OnFontSizePlus" />
+                <TextBlock Text="pt  (10–22)"
+                           Foreground="#8C7A5C"
+                           FontFamily="Cascadia Code, Consolas, Courier New"
+                           FontSize="{DynamicResource SmallFontSize}"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="4"
                        Text="Other settings live in settings.json — open the file with any editor."
                        Foreground="#8C7A5C"
                        FontFamily="Cascadia Code, Consolas, Courier New"
-                       FontSize="11"
-                       Margin="0,14,0,0"
+                       FontSize="{DynamicResource SmallFontSize}"
+                       Margin="0,18,0,0"
                        TextWrapping="Wrap" />
 
-            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
                 <Button x:Name="OpenJsonButton"
                         Content="Open settings.json"
                         Style="{StaticResource DialogButtonBase}"

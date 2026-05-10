@@ -49,6 +49,7 @@ public partial class MainWindow : Window
 
         _settingsStore = new JsonSettingsStore();
         _settings = _settingsStore.Load();
+        ApplyChromeMetricsFromResources();
         _quickLinks = BuildQuickLinkService(_settings);
         _secretResolver = new CompositeSecretResolver(
             new EnvironmentSecretProvider(),
@@ -68,6 +69,28 @@ public partial class MainWindow : Window
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         WindowDarkMode.EnableForWindow(this);
+    }
+
+    private void ApplyChromeMetricsFromResources()
+    {
+        // App.xaml.cs writes CaptionPixelHeight before any Window loads. Mirror that
+        // value into the title-bar row and WindowChrome so caption, tabs, and the
+        // drag region all line up at any font size.
+        if (TryGetDouble("CaptionPixelHeight", out var capH))
+        {
+            CaptionRow.Height = new System.Windows.GridLength(capH);
+            var chrome = System.Windows.Shell.WindowChrome.GetWindowChrome(this);
+            if (chrome is not null)
+            {
+                chrome.CaptionHeight = capH;
+            }
+        }
+    }
+
+    private bool TryGetDouble(string key, out double value)
+    {
+        if (TryFindResource(key) is double d) { value = d; return true; }
+        value = 0; return false;
     }
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
@@ -194,7 +217,8 @@ public partial class MainWindow : Window
             _quickLinks,
             _mcpRegistry,
             _mcpProjector,
-            terminalTheme: _settings.Terminal);
+            terminalTheme: _settings.Terminal,
+            terminalFontSize: (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize);
         var tabItem = new TabItem
         {
             Header = session.Header,
@@ -414,8 +438,15 @@ public partial class MainWindow : Window
         // _pickerItems.FirstOrDefault(); Down-arrow path explicitly sets index.
     }
 
+    private void OnAboutClick(object sender, RoutedEventArgs e)
+    {
+        var about = new AboutDialog { Owner = this };
+        about.ShowDialog();
+    }
+
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
+        var previousFontSize = (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize;
         var dialog = new SettingsDialog(_settingsStore) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Result is { } updated)
         {
@@ -423,6 +454,51 @@ public partial class MainWindow : Window
             _quickLinks = BuildQuickLinkService(_settings);
             _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver);
             ReloadProjectList();
+
+            var newFontSize = (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize;
+            if (newFontSize != previousFontSize)
+            {
+                // StaticResource lookups in XAML resolve once — the window chrome
+                // stays at the old size until the process restarts. Offer a
+                // self-restart so the user doesn't have to remember.
+                var restartNow = Views.MessageDialog.Show(
+                    this,
+                    title: "Restart to apply font size?",
+                    message: $"Font size set to {newFontSize}pt. Firepit needs to restart for the window chrome (tabs, captions, dialogs) to pick up the new size.",
+                    primaryLabel: "Restart now",
+                    secondaryLabel: "Later");
+                if (restartNow)
+                {
+                    SelfRestart();
+                }
+            }
+        }
+    }
+
+    private void SelfRestart()
+    {
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+        {
+            Log.Warning("Self-restart requested but ProcessPath is empty");
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                UseShellExecute = true,
+            });
+            // Shutdown triggers OnClosing → tabs persisted, sessions disposed.
+            // The new instance picks up immediately because the singleton guard
+            // releases its mutex on dispose (see OnExit).
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Self-restart failed");
+            ShowToast($"Restart failed: {ex.Message}", isError: true);
         }
     }
 
