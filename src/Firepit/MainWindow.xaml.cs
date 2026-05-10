@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     private readonly ISecretResolver _secretResolver;
     private readonly IStateStore _stateStore;
     private readonly IProjectConfigStore _projectConfigStore = new JsonProjectConfigStore();
+    private readonly Dictionary<string, IProjectConfigWatcher> _configWatchers = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingMigrationCount;
 
     // Drag-reorder state. _dragSource is the TabItem under cursor on
@@ -313,6 +314,7 @@ public partial class MainWindow : Window
         Log.Information("Opening tab for project {Project} (resume={Resume}) via adapter {Adapter}",
             project.Name, resume, adapter.Id);
 
+        var initialConfig = SafeLoadProjectConfig(project.Path);
         var session = new SessionTab(
             new ProjectContext(project),
             adapter,
@@ -320,7 +322,8 @@ public partial class MainWindow : Window
             _mcpRegistry,
             _mcpProjector,
             terminalTheme: _settings.Terminal,
-            terminalFontSize: (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize);
+            terminalFontSize: (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize,
+            initialConfig: initialConfig);
         var tabItem = new TabItem
         {
             Header = session.Header,
@@ -336,6 +339,7 @@ public partial class MainWindow : Window
         tabItem.IsSelected = true;
 
         _openTabs[project.Path] = (tabItem, session);
+        TryAttachConfigWatcher(project.Path, session);
         if (resume)
         {
             _ = session.RekindleAsync(resume: true, confirmIfBurning: false);
@@ -343,6 +347,44 @@ public partial class MainWindow : Window
         else
         {
             _ = session.EnsureInitializedAsync();
+        }
+    }
+
+    private Firepit.Core.ProjectConfig.ProjectConfig? SafeLoadProjectConfig(string path)
+    {
+        try { return _projectConfigStore.Load(path); }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not load .firepit/config.json for {Path}", path);
+            return null;
+        }
+    }
+
+    private void TryAttachConfigWatcher(string projectPath, SessionTab session)
+    {
+        if (!_settings.Tabs.AutoReloadOnConfigChange) return;
+        if (_configWatchers.ContainsKey(projectPath)) return;
+
+        try
+        {
+            var watcher = new Firepit.ProjectConfig.FileSystemProjectConfigWatcher(
+                projectPath, _projectConfigStore, Dispatcher);
+            watcher.ConfigChanged += (_, cfg) => _ = session.RefreshFromConfigAsync(cfg);
+            watcher.Start();
+            _configWatchers[projectPath] = watcher;
+            Log.Information("Config watcher started for {Path}", projectPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not start config watcher for {Path}", projectPath);
+        }
+    }
+
+    private void DisposeConfigWatcher(string projectPath)
+    {
+        if (_configWatchers.Remove(projectPath, out var watcher))
+        {
+            try { watcher.Dispose(); } catch { /* ignored */ }
         }
     }
 
@@ -380,6 +422,7 @@ public partial class MainWindow : Window
         if (key is not null)
         {
             _openTabs.Remove(key);
+            DisposeConfigWatcher(key);
         }
 
         var index = Tabs.Items.IndexOf(tabItem);
@@ -756,6 +799,12 @@ public partial class MainWindow : Window
         {
             try { await session.DisposeAsync(); } catch { /* ignored */ }
         }
+
+        foreach (var watcher in _configWatchers.Values)
+        {
+            try { watcher.Dispose(); } catch { /* ignored */ }
+        }
+        _configWatchers.Clear();
     }
 
     public void ShowToast(string message, bool isError = false)

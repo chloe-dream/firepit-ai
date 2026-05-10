@@ -12,6 +12,7 @@ using System.Windows.Threading;
 using Firepit.Core.Agents;
 using Firepit.Core.Mcp;
 using Firepit.Core.Process;
+using Firepit.Core.ProjectConfig;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
 using Firepit.Core.Sessions;
@@ -41,7 +42,9 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly TextBlock _headerText;
     private readonly TabToolbar _toolbar;
     private readonly Border _rekindleAffordance;
+    private readonly Border _configRestartAffordance;
     private readonly StackPanel _loadingIndicator;
+    private Firepit.Core.ProjectConfig.ProjectConfig? _currentConfig;
     private readonly RotateTransform _spinnerRotate;
     private readonly Storyboard _spinnerStoryboard;
     private readonly DispatcherTimer _tickTimer;
@@ -59,7 +62,8 @@ public sealed class SessionTab : IAsyncDisposable
         IAgentMcpProjector? mcpProjector = null,
         IActivityClock? clock = null,
         TerminalThemeSettings? terminalTheme = null,
-        int terminalFontSize = 14)
+        int terminalFontSize = 14,
+        Firepit.Core.ProjectConfig.ProjectConfig? initialConfig = null)
     {
         Context = context;
         _adapter = adapter;
@@ -68,6 +72,7 @@ public sealed class SessionTab : IAsyncDisposable
         _mcpProjector = mcpProjector;
         _terminalTheme = terminalTheme;
         _terminalFontSize = terminalFontSize;
+        _currentConfig = initialConfig;
 
         _detector = new ActivityDetector(clock ?? new SystemActivityClock());
         _detector.StateChanged += OnStateChanged;
@@ -97,6 +102,7 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
 
         _rekindleAffordance = BuildRekindleAffordance();
+        _configRestartAffordance = BuildConfigRestartAffordance();
 
         _terminalArea.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x16, 0x12));
 
@@ -612,6 +618,95 @@ public sealed class SessionTab : IAsyncDisposable
     private void HideRekindleAffordance()
     {
         _rekindleAffordance.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Re-apply <c>.firepit/config.json</c> to this live session.
+    /// Quick-links re-render via <see cref="TabToolbar.SetQuickLinks"/> (live,
+    /// no agent restart). MCP activations and agent overrides can't be
+    /// hot-swapped — Claude reads its MCP config once at startup, and the
+    /// agent's env/args are baked into the launch spec — so a change there
+    /// surfaces a non-modal "Restart needed" banner. Click → resume restart.
+    /// </summary>
+    public Task RefreshFromConfigAsync(Firepit.Core.ProjectConfig.ProjectConfig? newConfig)
+    {
+        if (_disposed) return Task.CompletedTask;
+
+        try
+        {
+            _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(Context));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to refresh quick-links for {Project}", Context.Name);
+        }
+
+        if (NeedsRestart(_currentConfig, newConfig))
+        {
+            ShowConfigRestartAffordance();
+            Log.Information("Config change for {Project} requires session restart", Context.Name);
+        }
+        _currentConfig = newConfig;
+        return Task.CompletedTask;
+    }
+
+    private Border BuildConfigRestartAffordance()
+    {
+        var label = new TextBlock
+        {
+            Text = "Config changed — click to restart this session",
+            Foreground = StateColors.Brush(SessionState.Igniting),
+            FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            FontSize = ResolveFontSize("MediumFontSize", 13),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(14, 6, 14, 6),
+        };
+
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x2A, 0x21, 0x1A)),
+            BorderBrush = StateColors.Brush(SessionState.Igniting),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 10, 0, 0),
+            Cursor = Cursors.Hand,
+            Visibility = Visibility.Collapsed,
+            Child = label,
+        };
+        Panel.SetZIndex(border, 50);
+        border.MouseLeftButtonUp += (_, _) =>
+        {
+            HideConfigRestartAffordance();
+            _ = RekindleAsync(resume: true, confirmIfBurning: false);
+        };
+        return border;
+    }
+
+    private void ShowConfigRestartAffordance()
+    {
+        if (!_terminalArea.Children.Contains(_configRestartAffordance))
+        {
+            _terminalArea.Children.Add(_configRestartAffordance);
+        }
+        _configRestartAffordance.Visibility = Visibility.Visible;
+    }
+
+    private void HideConfigRestartAffordance()
+    {
+        _configRestartAffordance.Visibility = Visibility.Collapsed;
+    }
+
+    private static bool NeedsRestart(
+        Firepit.Core.ProjectConfig.ProjectConfig? oldCfg,
+        Firepit.Core.ProjectConfig.ProjectConfig? newCfg)
+    {
+        return !string.Equals(
+            ProjectConfigFingerprint.ForRestart(oldCfg),
+            ProjectConfigFingerprint.ForRestart(newCfg),
+            StringComparison.Ordinal);
     }
 }
 

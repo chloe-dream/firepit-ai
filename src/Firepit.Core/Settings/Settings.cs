@@ -80,9 +80,19 @@ public sealed record TerminalThemeSettings(
         SelectionInactiveBackground: SelectionInactiveBackground ?? Defaults.SelectionInactiveBackground);
 }
 
-public sealed record TabSettings(bool PersistAcrossRestarts, int ActivityIdleThresholdMs)
+public sealed record TabSettings(
+    bool PersistAcrossRestarts,
+    int ActivityIdleThresholdMs,
+    // Phase 2: when true, FileSystemWatcher re-applies <project>/.firepit/config.json
+    // edits live. Off by default in v0.5.0 — the explicit firepit_reload MCP tool is
+    // the canonical reload path. Field-test the swap-file behaviour first, flip default
+    // in a follow-up release.
+    bool AutoReloadOnConfigChange = false)
 {
-    public static readonly TabSettings Defaults = new(PersistAcrossRestarts: true, ActivityIdleThresholdMs: 1500);
+    public static readonly TabSettings Defaults = new(
+        PersistAcrossRestarts: true,
+        ActivityIdleThresholdMs: 1500,
+        AutoReloadOnConfigChange: false);
 }
 
 public sealed record ShellsSettings(string Preferred)
