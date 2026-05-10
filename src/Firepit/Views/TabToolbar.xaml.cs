@@ -129,7 +129,10 @@ public partial class TabToolbar : UserControl
 
     private static StackPanel BuildQuickLinkContent(ResolvedQuickLink link)
     {
-        var (geometry, mode) = ResolveIcon(link.Icon, link.Name);
+        // Single resolver — same path-data + named-icon fallback shared with
+        // commands. Quick-links may pass either a named hint or pasted SVG
+        // path data.
+        var (geometry, mode) = Firepit.Resources.IconResolver.Resolve(link.Icon, fallbackName: link.Name);
 
         var path = new Path
         {
@@ -146,7 +149,7 @@ public partial class TabToolbar : UserControl
             RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Button) },
         };
 
-        if (mode == IconMode.Fill)
+        if (mode == Firepit.Resources.IconMode.Fill)
         {
             path.SetBinding(Shape.FillProperty, foregroundBinding);
         }
@@ -171,23 +174,6 @@ public partial class TabToolbar : UserControl
         panel.Children.Add(text);
         return panel;
     }
-
-    private enum IconMode { Stroke, Fill }
-
-    private static (Geometry Geometry, IconMode Mode) ResolveIcon(string? iconHint, string linkName)
-    {
-        // Explicit Icon field wins; otherwise sniff the link name. Old configs
-        // without an Icon get sensible defaults for the seeded entries.
-        var key = (iconHint ?? linkName).Trim().ToLowerInvariant();
-        return key switch
-        {
-            "github"    => (FindGeometry("IconGitHub"),    IconMode.Fill),
-            "fishbowl"  => (FindGeometry("IconFishbowl"),  IconMode.Fill),
-            _           => (FindGeometry("IconLink"),      IconMode.Stroke),
-        };
-    }
-
-    private static Geometry FindGeometry(string key) => (Geometry)Application.Current.FindResource(key);
 
     private void OnRekindleClick(object sender, RoutedEventArgs e) => RekindleRequested?.Invoke(this, EventArgs.Empty);
     private void OnResumeClick(object sender, RoutedEventArgs e)   => ResumeRequested?.Invoke(this, EventArgs.Empty);

@@ -94,4 +94,32 @@ public class JsonProjectConfigStoreTests : IDisposable
         var path = JsonProjectConfigStore.ResolvePath(_projectDir);
         Assert.Equal(Path.Combine(_projectDir, ".firepit", "config.json"), path);
     }
+
+    [Fact]
+    public void RoundTrip_CommandsAllThreeTypes()
+    {
+        var original = new Firepit.Core.ProjectConfig.ProjectConfig(
+            Commands:
+            [
+                new ProjectCommand("Tests", ProjectCommandType.Shell,
+                    Icon: "play", Command: "npm", Args: ["test"]),
+                new ProjectCommand("Deploy", ProjectCommandType.ClaudePrompt,
+                    Icon: "rocket", Prompt: "Deploy to staging"),
+                new ProjectCommand("Docs", ProjectCommandType.Url,
+                    Icon: "book", Url: "https://example.com/docs"),
+            ]);
+
+        _store.Save(_projectDir, original);
+        var loaded = _store.Load(_projectDir);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(3, loaded!.Commands!.Count);
+        Assert.Equal(ProjectCommandType.Shell,        loaded.Commands![0].Type);
+        Assert.Equal("npm",                            loaded.Commands![0].Command);
+        Assert.Equal("test",                           loaded.Commands![0].Args![0]);
+        Assert.Equal(ProjectCommandType.ClaudePrompt, loaded.Commands![1].Type);
+        Assert.Equal("Deploy to staging",              loaded.Commands![1].Prompt);
+        Assert.Equal(ProjectCommandType.Url,          loaded.Commands![2].Type);
+        Assert.Equal("https://example.com/docs",       loaded.Commands![2].Url);
+    }
 }

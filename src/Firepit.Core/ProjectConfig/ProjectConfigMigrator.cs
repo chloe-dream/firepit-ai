@@ -114,16 +114,15 @@ public sealed class ProjectConfigMigrator
 
     private static ProjectMcpActivation MapActivation(string id, ProjectSettings project)
     {
-        project.McpOverrides?.TryGetValue(id, out var ov);
-        var ovValue = project.McpOverrides is not null
-                      && project.McpOverrides.TryGetValue(id, out var resolved)
-                      ? resolved
-                      : null;
+        var ov = project.McpOverrides is not null
+                 && project.McpOverrides.TryGetValue(id, out var resolved)
+                 ? resolved
+                 : null;
         return new ProjectMcpActivation(
             Id:              id,
-            ArgOverrides:    ovValue?.Args,
-            EnvOverrides:    ovValue?.Environment,
-            HeaderOverrides: ovValue?.Headers);
+            ArgOverrides:    ov?.Args,
+            EnvOverrides:    ov?.Environment,
+            HeaderOverrides: ov?.Headers);
     }
 
     private static ProjectAgentConfig? BuildAgentConfig(ProjectSettings project)

@@ -13,8 +13,6 @@ namespace Firepit.Mcp;
 [JsonSerializable(typeof(IReadOnlyList<SessionInfo>))]
 [JsonSerializable(typeof(ToolCallResult))]
 [JsonSerializable(typeof(InboxWriteResult))]
-[JsonSerializable(typeof(McpToolDefinition))]
-[JsonSerializable(typeof(IReadOnlyList<McpToolDefinition>))]
 [JsonSerializable(typeof(McpResourceDefinition))]
 [JsonSerializable(typeof(IReadOnlyList<McpResourceDefinition>))]
 [JsonSerializable(typeof(JsonElement))]
