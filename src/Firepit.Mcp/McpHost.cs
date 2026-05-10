@@ -82,6 +82,13 @@ public sealed class McpHost : IDisposable
     private async Task HandleClientAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
         var lengthBuf = new byte[4];
+
+        // First frame is the firepit-mcp bridge's context handshake. Captures
+        // which project the calling agent is in (used for firepit_send_to's
+        // implicit 'from' field).
+        var ctx = await ReadContextHandshakeAsync(pipe, lengthBuf, ct);
+        Log.Debug("MCP client context: project='{Project}' pid={Pid}", ctx.ProjectName, ctx.Pid);
+
         while (!ct.IsCancellationRequested && pipe.IsConnected)
         {
             if (!await ReadExactlyAsync(pipe, lengthBuf, 0, 4, ct)) return;
@@ -93,7 +100,7 @@ public sealed class McpHost : IDisposable
             string? responseJson;
             try
             {
-                responseJson = await DispatchAsync(payload);
+                responseJson = await DispatchAsync(payload, ctx);
             }
             catch (Exception ex)
             {
@@ -114,10 +121,37 @@ public sealed class McpHost : IDisposable
         }
     }
 
+    private static async Task<ConnectionContext> ReadContextHandshakeAsync(
+        Stream pipe, byte[] lengthBuf, CancellationToken ct)
+    {
+        if (!await ReadExactlyAsync(pipe, lengthBuf, 0, 4, ct))
+            return ConnectionContext.Empty;
+        var length = BitConverter.ToInt32(lengthBuf, 0);
+        if (length <= 0 || length > 16 * 1024)
+            return ConnectionContext.Empty;
+        var payload = new byte[length];
+        if (!await ReadExactlyAsync(pipe, payload, 0, length, ct))
+            return ConnectionContext.Empty;
+
+        try
+        {
+            var node = JsonNode.Parse(payload);
+            var ctx = node?["_firepit_context"];
+            if (ctx is null) return ConnectionContext.Empty;
+            return new ConnectionContext(
+                ProjectName: ctx["projectName"]?.GetValue<string>() ?? "",
+                Pid:         ctx["pid"]?.GetValue<int?>() ?? 0);
+        }
+        catch
+        {
+            return ConnectionContext.Empty;
+        }
+    }
+
     /// <summary>
     /// Returns the response JSON string, or null for notifications (no response).
     /// </summary>
-    private async Task<string?> DispatchAsync(byte[] payload)
+    private async Task<string?> DispatchAsync(byte[] payload, ConnectionContext ctx)
     {
         JsonNode? root;
         try
@@ -149,7 +183,7 @@ public sealed class McpHost : IDisposable
                 "initialize"                 => BuildResult(idNode, BuildInitializeResult()),
                 "notifications/initialized"  => null,
                 "tools/list"                 => BuildResult(idNode, BuildToolsList()),
-                "tools/call"                 => await HandleToolsCallAsync(idNode, paramsNode),
+                "tools/call"                 => await HandleToolsCallAsync(idNode, paramsNode, ctx),
                 "resources/list"             => BuildResult(idNode, BuildResourcesList()),
                 "resources/read"             => await HandleResourcesReadAsync(idNode, paramsNode),
                 "ping"                       => BuildResult(idNode, new JsonObject()),
@@ -200,12 +234,12 @@ public sealed class McpHost : IDisposable
 
     // --- tools/call -----------------------------------------------------
 
-    private async Task<string> HandleToolsCallAsync(JsonNode? id, JsonNode? paramsNode)
+    private async Task<string> HandleToolsCallAsync(JsonNode? id, JsonNode? paramsNode, ConnectionContext ctx)
     {
         var name = paramsNode?["name"]?.GetValue<string>();
         var args = paramsNode?["arguments"] as JsonObject ?? new JsonObject();
 
-        Log.Information("MCP tools/call: {Name}", name);
+        Log.Information("MCP tools/call: {Name} (from project '{From}')", name, ctx.ProjectName);
 
         switch (name)
         {
@@ -250,7 +284,7 @@ public sealed class McpHost : IDisposable
             }
             case "firepit_send_to":
             {
-                var fromProject = ReadEnvProjectName();
+                var fromProject = !string.IsNullOrEmpty(ctx.ProjectName) ? ctx.ProjectName : null;
                 var toProject   = args["toProject"]?.GetValue<string>();
                 var subject     = args["subject"]?.GetValue<string>();
                 var body        = args["body"]?.GetValue<string>();
@@ -258,7 +292,7 @@ public sealed class McpHost : IDisposable
                 if (string.IsNullOrEmpty(toProject) || string.IsNullOrEmpty(subject) || body is null)
                     return BuildErrorResponse(id, -32602, "missing 'toProject', 'subject', or 'body'");
                 if (string.IsNullOrEmpty(fromProject))
-                    return BuildErrorResponse(id, -32603, "FIREPIT_PROJECT_NAME not set on caller — cannot determine sender");
+                    return BuildErrorResponse(id, -32603, "Sender project unknown — bridge did not provide FIREPIT_PROJECT_NAME context");
                 var result = await _backend.SendInboxAsync(fromProject, toProject, subject, body, priority);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.InboxWriteResult)));
             }
@@ -268,17 +302,14 @@ public sealed class McpHost : IDisposable
     }
 
     /// <summary>
-    /// Reads FIREPIT_PROJECT_NAME from the bridge process's environment via
-    /// the env that Claude Code passed through. Currently we don't have a
-    /// way to read remote env, so we expect the bridge to embed it in the
-    /// arguments. Fallback for v0.5.0: look at THIS process's env (won't work
-    /// in practice — left here as the hook for the spec'd behaviour). The
-    /// Phase-5 plan calls for the host process to track this per-client; this
-    /// stub keeps the wire surface honest. firepit_send_to without a known
-    /// sender returns a clear error rather than a wrong-from line.
+    /// Per-connection context handshake parsed from the first frame on the
+    /// pipe. Carries the calling agent's FIREPIT_PROJECT_NAME so handlers
+    /// like firepit_send_to know which project a tool call originated from.
     /// </summary>
-    private static string? ReadEnvProjectName() =>
-        Environment.GetEnvironmentVariable("FIREPIT_PROJECT_NAME");
+    public sealed record ConnectionContext(string ProjectName, int Pid)
+    {
+        public static readonly ConnectionContext Empty = new("", 0);
+    }
 
     // --- resources/list -------------------------------------------------
 

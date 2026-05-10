@@ -24,6 +24,22 @@ try
         return 1;
     }
 
+    // Send the Firepit context frame BEFORE handing off the wire to the
+    // tunnel. The host reads exactly one such frame per connection and uses
+    // it to know which project the calling agent runs in (drives the 'from'
+    // field of firepit_send_to, etc.).
+    var fromProject = Environment.GetEnvironmentVariable("FIREPIT_PROJECT_NAME") ?? "";
+    var pid         = Environment.ProcessId;
+    // Plain concat; raw-string interpolation gets confused by the trailing
+    // }}}} sequence (interpolation close + JSON close braces).
+    var contextJson = "{\"_firepit_context\":{\"projectName\":\""
+        + Escape(fromProject) + "\",\"pid\":" + pid + "}}";
+    var contextBytes = Encoding.UTF8.GetBytes(contextJson);
+    var lenPrefix = BitConverter.GetBytes(contextBytes.Length);
+    await pipe.WriteAsync(lenPrefix);
+    await pipe.WriteAsync(contextBytes);
+    await pipe.FlushAsync();
+
     var stdin = Console.OpenStandardInput();
     var stdout = Console.OpenStandardOutput();
 

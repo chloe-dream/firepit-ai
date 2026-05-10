@@ -40,6 +40,9 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly Grid _terminalArea;
     private readonly TextBlock _statusText;
     private readonly TextBlock _headerText;
+    private readonly StackPanel _headerPanel;
+    private readonly Border _inboxBadge;
+    private readonly TextBlock _inboxBadgeCount;
     private readonly TabToolbar _toolbar;
     private readonly Border _rekindleAffordance;
     private readonly Border _configRestartAffordance;
@@ -125,7 +128,42 @@ public sealed class SessionTab : IAsyncDisposable
             Text = context.Name,
             Foreground = StateColors.Brush(SessionState.Cold),
             FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            VerticalAlignment = VerticalAlignment.Center,
         };
+
+        // Inbox badge sits to the right of the project name. Hidden when
+        // count is zero. Click handler is attached by MainWindow when it
+        // wires the watcher (per-project knowledge of the inbox path lives
+        // there, not here).
+        _inboxBadgeCount = new TextBlock
+        {
+            Text = "0",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x11, 0x0D)),
+            FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _inboxBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xC9, 0x7B)),
+            CornerRadius = new CornerRadius(7),
+            Padding = new Thickness(5, 1, 5, 1),
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Cursor = Cursors.Hand,
+            ToolTip = "Inbox messages — click to open folder",
+            Child = _inboxBadgeCount,
+        };
+
+        _headerPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _headerPanel.Children.Add(_headerText);
+        _headerPanel.Children.Add(_inboxBadge);
 
         _tickTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -138,7 +176,28 @@ public sealed class SessionTab : IAsyncDisposable
 
     public UIElement Content => _content;
 
-    public UIElement Header => _headerText;
+    public UIElement Header => _headerPanel;
+
+    /// <summary>
+    /// Update the inbox badge for this session. Called by MainWindow's
+    /// InboxWatcher subscription. Set unreadCount=0 to hide.
+    /// </summary>
+    public void SetInboxBadge(int unreadCount, MouseButtonEventHandler? onClick = null)
+    {
+        if (_disposed) return;
+        if (unreadCount <= 0)
+        {
+            _inboxBadge.Visibility = Visibility.Collapsed;
+            return;
+        }
+        _inboxBadgeCount.Text = unreadCount > 99 ? "99+" : unreadCount.ToString();
+        _inboxBadge.Visibility = Visibility.Visible;
+        if (onClick is not null)
+        {
+            _inboxBadge.MouseLeftButtonUp -= onClick;  // dedup before re-attach
+            _inboxBadge.MouseLeftButtonUp += onClick;
+        }
+    }
 
     public SessionState State => _detector.State;
 
@@ -256,11 +315,21 @@ public sealed class SessionTab : IAsyncDisposable
             Log.Information("Spawning agent for {Project}: {Executable} {Args} in {Cwd} (size {Cols}x{Rows})",
                 Context.Name, spec.Executable, string.Join(' ', spec.Arguments), spec.WorkingDirectory,
                 initialSize.Cols, initialSize.Rows);
+
+            // Inject FIREPIT_PROJECT_NAME so the agent (and any tools / MCP
+            // bridges it spawns) know which Firepit project they're in. The
+            // firepit-mcp.exe bridge reads this on connect to populate the
+            // 'from' field of cross-Claude inbox messages.
+            var env = new Dictionary<string, string?>(spec.EnvironmentOverrides ?? new Dictionary<string, string?>(), StringComparer.OrdinalIgnoreCase)
+            {
+                ["FIREPIT_PROJECT_NAME"] = _currentConfig?.Id ?? Context.Name,
+            };
+
             _ptyChannel = await ConPtyLauncher.SpawnAsync(
                 executable: spec.Executable,
                 arguments: spec.Arguments,
                 workingDirectory: spec.WorkingDirectory,
-                environmentOverrides: spec.EnvironmentOverrides,
+                environmentOverrides: env,
                 initialSize: initialSize,
                 ct: ct);
             Log.Information("Agent spawned for {Project}: pid={Pid}", Context.Name, _ptyChannel.Pid);

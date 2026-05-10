@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
+using Firepit.Core.Inbox;
 using Firepit.Core.Mcp;
 using Firepit.Core.Platform;
 using Firepit.Core.ProjectConfig;
@@ -41,6 +42,7 @@ public partial class MainWindow : Window
     private readonly IStateStore _stateStore;
     private readonly IProjectConfigStore _projectConfigStore = new JsonProjectConfigStore();
     private readonly Dictionary<string, IProjectConfigWatcher> _configWatchers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, InboxWatcher> _inboxWatchers = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingMigrationCount;
 
     // Drag-reorder state. _dragSource is the TabItem under cursor on
@@ -399,6 +401,7 @@ public partial class MainWindow : Window
 
         _openTabs[project.Path] = (tabItem, session);
         TryAttachConfigWatcher(project.Path, session);
+        TryAttachInboxWatcher(project.Path, session);
         if (resume)
         {
             _ = session.RekindleAsync(resume: true, confirmIfBurning: false);
@@ -447,6 +450,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private void TryAttachInboxWatcher(string projectPath, SessionTab session)
+    {
+        if (!(_settings.Platform ?? PlatformSettings.Defaults).InboxBadgesEnabled) return;
+        if (_inboxWatchers.ContainsKey(projectPath)) return;
+
+        try
+        {
+            var watcher = new InboxWatcher(projectPath);
+            watcher.UnreadCountChanged += (_, count) =>
+                Dispatcher.InvokeAsync(() => session.SetInboxBadge(count, OpenInboxOnClick(projectPath)));
+            _inboxWatchers[projectPath] = watcher;
+            // Apply initial count synchronously so an existing inbox shows up
+            // without waiting for a filesystem event.
+            session.SetInboxBadge(watcher.UnreadCount, OpenInboxOnClick(projectPath));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not start inbox watcher for {Path}", projectPath);
+        }
+    }
+
+    private void DisposeInboxWatcher(string projectPath)
+    {
+        if (_inboxWatchers.Remove(projectPath, out var watcher))
+        {
+            try { watcher.Dispose(); } catch { /* ignored */ }
+        }
+    }
+
+    private static MouseButtonEventHandler OpenInboxOnClick(string projectPath) =>
+        (_, _) =>
+        {
+            try
+            {
+                var inboxPath = System.IO.Path.Combine(projectPath, ".firepit", "inbox");
+                if (!System.IO.Directory.Exists(inboxPath))
+                {
+                    System.IO.Directory.CreateDirectory(inboxPath);
+                }
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{inboxPath}\"",
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not open inbox folder");
+            }
+        };
+
     private void OnTabSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (Tabs.SelectedItem is TabItem { Tag: SessionTab session })
@@ -487,6 +542,7 @@ public partial class MainWindow : Window
         {
             _openTabs.Remove(key);
             DisposeConfigWatcher(key);
+            DisposeInboxWatcher(key);
         }
 
         var index = Tabs.Items.IndexOf(tabItem);
@@ -869,6 +925,12 @@ public partial class MainWindow : Window
             try { watcher.Dispose(); } catch { /* ignored */ }
         }
         _configWatchers.Clear();
+
+        foreach (var watcher in _inboxWatchers.Values)
+        {
+            try { watcher.Dispose(); } catch { /* ignored */ }
+        }
+        _inboxWatchers.Clear();
     }
 
     public void ShowToast(string message, bool isError = false)
