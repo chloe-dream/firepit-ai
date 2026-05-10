@@ -13,6 +13,7 @@ internal static class WebAssetExtractor
         ["Firepit.Web.Resources.xterm.js"]        = "xterm.js",
         ["Firepit.Web.Resources.xterm.css"]       = "xterm.css",
         ["Firepit.Web.Resources.addon-fit.js"]    = "addon-fit.js",
+        ["Firepit.Web.Resources.addon-search.js"] = "addon-search.js",
         ["Firepit.Web.Resources.CascadiaCode.ttf"] = "CascadiaCode.ttf",
     };
 

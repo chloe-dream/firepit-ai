@@ -61,12 +61,78 @@
         .xterm-viewport::-webkit-scrollbar-corner {
             background: transparent;
         }
+
+        /* Search overlay — Windows-Terminal-style floating panel, top-right
+           of the active terminal. Hidden by default, toggled via Ctrl+Shift+F. */
+        #search-overlay {
+            position: absolute;
+            top: 14px;
+            right: 22px;
+            background: #2A211A;
+            border: 1px solid #5C4D3E;
+            border-radius: 4px;
+            padding: 6px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            z-index: 100;
+            font-family: 'Cascadia Code', Consolas, monospace;
+            font-size: 12px;
+            color: #E8E2D8;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+        }
+        #search-overlay.hidden { display: none; }
+        #search-input {
+            background: #1A1612;
+            border: 1px solid #332B22;
+            color: #E8E2D8;
+            caret-color: #E8E2D8;
+            padding: 4px 6px;
+            width: 220px;
+            font-family: inherit;
+            font-size: inherit;
+            outline: none;
+        }
+        #search-input:focus { border-color: #F5C97B; }
+        #search-count {
+            color: #A89F92;
+            min-width: 56px;
+            text-align: center;
+            user-select: none;
+        }
+        #search-overlay button {
+            background: transparent;
+            border: 1px solid transparent;
+            color: #A89F92;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 14px;
+            line-height: 1;
+            min-width: 22px;
+        }
+        #search-overlay button:hover {
+            background: #332B22;
+            color: #E8E2D8;
+        }
+        #search-overlay button:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
     </style>
 </head>
 <body>
     <div id="terminal"></div>
+    <div id="search-overlay" class="hidden">
+        <input id="search-input" type="text" placeholder="Search…" spellcheck="false" autocomplete="off">
+        <span id="search-count">0/0</span>
+        <button id="search-prev" title="Previous (Shift+Enter)">↑</button>
+        <button id="search-next" title="Next (Enter)">↓</button>
+        <button id="search-close" title="Close (Esc)">×</button>
+    </div>
     <script src="xterm.js"></script>
     <script src="addon-fit.js"></script>
+    <script src="addon-search.js"></script>
     <script>
         (function () {
             'use strict';
@@ -96,6 +162,20 @@
 
             const fitAddon = new FitAddon.FitAddon();
             term.loadAddon(fitAddon);
+
+            // Terminal-search addon. Decorations use brand warm tones —
+            // active match takes the same accent as the selected-tab line so
+            // the visual language stays cohesive across the chrome.
+            const searchAddon = new SearchAddon.SearchAddon();
+            term.loadAddon(searchAddon);
+            const searchDecorations = {
+                matchBackground:                '#5C4D3E',
+                matchBorder:                    '#7A6855',
+                matchOverviewRuler:             '#7A6855',
+                activeMatchBackground:          '#F5C97B',
+                activeMatchBorder:              '#F5C97B',
+                activeMatchColorOverviewRuler:  '#F5C97B',
+            };
             // term.open() is deferred to after font load — see startup() below.
 
             function postToHost(message) {
@@ -148,6 +228,62 @@
                 });
             }
 
+            // Search overlay wiring. The DOM lives in static markup; we just
+            // hook events here. Live-search on input, Enter / Shift+Enter
+            // navigate, Esc closes & clears decorations. Match count comes
+            // from the addon's onDidChangeResults event.
+            const searchOverlay = document.getElementById('search-overlay');
+            const searchInput   = document.getElementById('search-input');
+            const searchCount   = document.getElementById('search-count');
+            const searchPrev    = document.getElementById('search-prev');
+            const searchNext    = document.getElementById('search-next');
+            const searchClose   = document.getElementById('search-close');
+
+            function openSearch() {
+                searchOverlay.classList.remove('hidden');
+                searchInput.focus();
+                searchInput.select();
+            }
+            function closeSearch() {
+                searchOverlay.classList.add('hidden');
+                searchAddon.clearDecorations();
+                searchInput.value = '';
+                searchCount.textContent = '0/0';
+                term.focus();
+            }
+            function findNext()   {
+                if (searchInput.value) searchAddon.findNext(searchInput.value, { decorations: searchDecorations });
+            }
+            function findPrev()   {
+                if (searchInput.value) searchAddon.findPrevious(searchInput.value, { decorations: searchDecorations });
+            }
+
+            searchAddon.onDidChangeResults(function (e) {
+                if (!e || typeof e.resultCount !== 'number') {
+                    searchCount.textContent = '0/0';
+                    return;
+                }
+                // resultIndex is -1 when there are matches but none active yet
+                // (e.g. after typing but before pressing Enter). Show 0/total
+                // in that case so the count makes sense to the user.
+                const idx = e.resultIndex >= 0 ? e.resultIndex + 1 : 0;
+                searchCount.textContent = idx + '/' + e.resultCount;
+            });
+
+            searchInput.addEventListener('input', findNext);
+            searchInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    if (e.shiftKey) findPrev(); else findNext();
+                    e.preventDefault();
+                } else if (e.key === 'Escape') {
+                    closeSearch();
+                    e.preventDefault();
+                }
+            });
+            searchPrev.addEventListener('click', findPrev);
+            searchNext.addEventListener('click', findNext);
+            searchClose.addEventListener('click', closeSearch);
+
             // Clipboard / Terminal-input UX (Phase 5).
             // Returning false suppresses xterm's normal handling for that key.
             term.attachCustomKeyEventHandler(function (e) {
@@ -155,6 +291,14 @@
                 const ctrl  = e.ctrlKey || e.metaKey;
                 const shift = e.shiftKey;
                 const k     = e.key;
+
+                // Ctrl+Shift+F → open search overlay. Ctrl+F alone stays free
+                // for the agent's own readline / fzf bindings inside claude.
+                if (ctrl && shift && (k === 'f' || k === 'F')) {
+                    openSearch();
+                    e.preventDefault();
+                    return false;
+                }
 
                 // Ctrl+V or Ctrl+Shift+V → paste from host clipboard
                 if (ctrl && (k === 'v' || k === 'V')) {

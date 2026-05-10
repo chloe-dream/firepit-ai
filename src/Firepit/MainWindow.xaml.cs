@@ -38,6 +38,13 @@ public partial class MainWindow : Window
     private readonly ISecretResolver _secretResolver;
     private readonly IStateStore _stateStore;
 
+    // Drag-reorder state. _dragSource is the TabItem under cursor on
+    // PreviewMouseDown; cleared on drag-start so the same press can't fire
+    // twice. _dragStart is the press point in Tabs-local coords for hysteresis.
+    private TabItem? _dragSource;
+    private System.Windows.Point _dragStart;
+    private const double DragThresholdPx = 8.0;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -64,6 +71,11 @@ public partial class MainWindow : Window
         Closing += OnClosing;
         SourceInitialized += OnSourceInitialized;
         StateChanged += OnWindowStateChanged;
+
+        Tabs.AllowDrop = true;
+        Tabs.DragOver  += OnTabsDragOver;
+        Tabs.DragLeave += OnTabsDragLeave;
+        Tabs.Drop      += OnTabsDrop;
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -244,6 +256,8 @@ public partial class MainWindow : Window
             Tag = session,
             ToolTip = project.Path,
         };
+        tabItem.PreviewMouseLeftButtonDown += OnTabPreviewMouseDown;
+        tabItem.PreviewMouseMove           += OnTabPreviewMouseMove;
 
         Tabs.Items.Add(tabItem);
         Tabs.Visibility = Visibility.Visible;
@@ -313,6 +327,124 @@ public partial class MainWindow : Window
         }
 
         try { await session.DisposeAsync(); } catch { /* ignored */ }
+    }
+
+    private void OnTabPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not TabItem tab) return;
+        // Skip drag-arming when the press lands on the close button (or its
+        // visual descendants) — otherwise every click of × also arms a drag.
+        if (e.OriginalSource is DependencyObject origin && IsInsideCloseButton(origin))
+        {
+            _dragSource = null;
+            return;
+        }
+        _dragSource = tab;
+        _dragStart  = e.GetPosition(Tabs);
+    }
+
+    private void OnTabPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragSource is null || e.LeftButton != MouseButtonState.Pressed) return;
+        var pos = e.GetPosition(Tabs);
+        if (Math.Abs(pos.X - _dragStart.X) < DragThresholdPx
+            && Math.Abs(pos.Y - _dragStart.Y) < DragThresholdPx) return;
+
+        var source = _dragSource;
+        _dragSource = null; // DoDragDrop is modal — clear before so we don't re-enter
+        try
+        {
+            DragDrop.DoDragDrop(source, source, DragDropEffects.Move);
+        }
+        finally
+        {
+            HideDropIndicator();
+        }
+    }
+
+    private void OnTabsDragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(typeof(TabItem)) is not TabItem source)
+        {
+            e.Effects = DragDropEffects.None;
+            HideDropIndicator();
+            e.Handled = true;
+            return;
+        }
+
+        var pos = e.GetPosition(Tabs);
+        var (target, insertBefore) = HitTestTab(pos);
+        if (target is null || ReferenceEquals(target, source))
+        {
+            e.Effects = DragDropEffects.None;
+            HideDropIndicator();
+        }
+        else
+        {
+            e.Effects = DragDropEffects.Move;
+            ShowDropIndicatorAt(target, insertBefore);
+        }
+        e.Handled = true;
+    }
+
+    private void OnTabsDragLeave(object sender, DragEventArgs e) => HideDropIndicator();
+
+    private void OnTabsDrop(object sender, DragEventArgs e)
+    {
+        HideDropIndicator();
+        if (e.Data.GetData(typeof(TabItem)) is not TabItem source) return;
+
+        var (target, insertBefore) = HitTestTab(e.GetPosition(Tabs));
+        if (target is null || ReferenceEquals(target, source)) return;
+
+        var srcIdx = Tabs.Items.IndexOf(source);
+        var tgtIdx = Tabs.Items.IndexOf(target);
+        if (srcIdx < 0 || tgtIdx < 0) return;
+
+        // Compute the new index after removing source.
+        var insertIdx = insertBefore ? tgtIdx : tgtIdx + 1;
+        if (srcIdx < insertIdx) insertIdx--;
+        if (insertIdx == srcIdx) return;
+
+        Tabs.Items.Remove(source);
+        Tabs.Items.Insert(insertIdx, source);
+        source.IsSelected = true;
+        e.Handled = true;
+    }
+
+    private (TabItem? Target, bool InsertBefore) HitTestTab(System.Windows.Point pos)
+    {
+        foreach (var item in Tabs.Items)
+        {
+            if (item is not TabItem tab) continue;
+            var origin = tab.TransformToAncestor(Tabs).Transform(default);
+            var width  = tab.ActualWidth;
+            if (pos.X >= origin.X && pos.X <= origin.X + width)
+            {
+                // Left half → insert before this tab; right half → insert after.
+                return (tab, pos.X < origin.X + width / 2.0);
+            }
+        }
+        return (null, false);
+    }
+
+    private void ShowDropIndicatorAt(TabItem target, bool insertBefore)
+    {
+        var origin = target.TransformToAncestor(Tabs).Transform(default);
+        var x = insertBefore ? origin.X : origin.X + target.ActualWidth;
+        TabDropIndicator.Margin = new Thickness(x - 1, 0, 0, 0);
+        TabDropIndicator.Visibility = Visibility.Visible;
+    }
+
+    private void HideDropIndicator() => TabDropIndicator.Visibility = Visibility.Collapsed;
+
+    private static bool IsInsideCloseButton(DependencyObject origin)
+    {
+        for (var node = origin; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is Button { Name: "CloseBtn" }) return true;
+        }
+        return false;
     }
 
     private void OnNewTabClick(object sender, RoutedEventArgs e)
@@ -527,12 +659,20 @@ public partial class MainWindow : Window
         {
             try
             {
+                // Iterate Tabs.Items (visual order) rather than _openTabs.Values
+                // (insertion order) so drag-reordered sessions restore in the
+                // user's chosen layout.
                 var snapshot = new AppState(
                     Version: AppState.CurrentVersion,
-                    Tabs: _openTabs.Values
-                        .Select(t => new TabState(
-                            ProjectName: t.Session.Context.Name,
-                            LastSessionResumable: t.Session.State != Core.Sessions.SessionState.Dead))
+                    Tabs: Tabs.Items.OfType<TabItem>()
+                        .Where(t => t.Tag is SessionTab)
+                        .Select(t =>
+                        {
+                            var s = (SessionTab)t.Tag!;
+                            return new TabState(
+                                ProjectName: s.Context.Name,
+                                LastSessionResumable: s.State != Core.Sessions.SessionState.Dead);
+                        })
                         .ToArray());
                 _stateStore.Save(snapshot);
             }
