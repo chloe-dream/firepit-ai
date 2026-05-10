@@ -12,7 +12,7 @@
 ;   - bin/installer/FirepitSetup-<version>-win-x64.exe
 
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.5.0"
 #endif
 
 [Setup]
@@ -49,7 +49,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
 
 [Files]
-Source: "..\bin\win-x64\Firepit.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\win-x64\Firepit.exe";   DestDir: "{app}"; Flags: ignoreversion
+; firepit-mcp.exe is the stdio bridge that lets Claude Code talk to Firepit
+; via MCP. Lives next to Firepit.exe so the pipe-MCP wiring just works after
+; install — projects' .claude/settings.json points at this filename.
+Source: "..\bin\win-x64\firepit-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Firepit"; Filename: "{app}\Firepit.exe"

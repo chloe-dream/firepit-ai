@@ -2,9 +2,13 @@
   <Folder Name="/src/">
     <Project Path="src/Firepit.Adapters/Firepit.Adapters.csproj" />
     <Project Path="src/Firepit.Core/Firepit.Core.csproj" />
+    <Project Path="src/Firepit.Mcp/Firepit.Mcp.csproj" />
     <Project Path="src/Firepit.Process/Firepit.Process.csproj" />
     <Project Path="src/Firepit.Web/Firepit.Web.csproj" />
     <Project Path="src/Firepit/Firepit.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/firepit-mcp/Firepit.Mcp.Bridge.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Firepit.Adapters.Tests/Firepit.Adapters.Tests.csproj" />

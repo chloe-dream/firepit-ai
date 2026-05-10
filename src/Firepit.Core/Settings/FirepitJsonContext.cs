@@ -11,6 +11,6 @@ namespace Firepit.Core.Settings;
     UseStringEnumConverter = true,
     WriteIndented = true)]
 [JsonSerializable(typeof(FirepitSettings))]
-internal partial class FirepitJsonContext : JsonSerializerContext
+public partial class FirepitJsonContext : JsonSerializerContext
 {
 }

@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using Firepit.Core.Settings;
+using Firepit.Mcp;
 using Firepit.Singleton;
 using Serilog;
 
@@ -11,6 +12,7 @@ namespace Firepit;
 public partial class App : Application
 {
     private SingletonGuard? _guard;
+    private McpHost? _mcpHost;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -46,6 +48,27 @@ public partial class App : Application
 
         _guard.StartListening(HandleSingletonCommand);
         base.OnStartup(e);
+
+        // Start the MCP host once MainWindow exists (base.OnStartup creates it
+        // via App.xaml's StartupUri). Wire it to the dispatcher Loaded event so
+        // we don't race the window's own initialisation.
+        if (MainWindow is MainWindow mw)
+        {
+            mw.Loaded += (_, _) =>
+            {
+                if (_mcpHost is not null) return;
+                try
+                {
+                    var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.5.0";
+                    _mcpHost = new McpHost(mw, version);
+                    _mcpHost.Start();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "MCP host failed to start");
+                }
+            };
+        }
     }
 
     private Task HandleSingletonCommand(SingletonCommand command)
@@ -74,6 +97,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("Firepit shutting down (exit code {Code})", e.ApplicationExitCode);
+        _mcpHost?.Dispose();
         _guard?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
