@@ -100,6 +100,25 @@ public partial class MainWindow : Window
                 ? "CaptionRestoreButton"
                 : "CaptionMaximizeButton");
         MaxRestoreButton.ToolTip = WindowState == WindowState.Maximized ? "Restore" : "Maximize";
+
+        // WPF custom-chrome windows extend their client rect past the work
+        // area by ResizeBorderThickness on every edge when maximized — a known
+        // platform quirk. Without compensation, the 2 px yellow accent at the
+        // top of the selected tab is the first thing to fall off-screen.
+        // Add a matching margin on the root grid only while maximized.
+        if (Content is FrameworkElement root)
+        {
+            if (WindowState == WindowState.Maximized)
+            {
+                var border = System.Windows.Shell.WindowChrome.GetWindowChrome(this)?.ResizeBorderThickness
+                             ?? new Thickness(6);
+                root.Margin = border;
+            }
+            else
+            {
+                root.Margin = default;
+            }
+        }
     }
 
     private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
