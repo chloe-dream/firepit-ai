@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
 using Firepit.Core.Mcp;
+using Firepit.Core.Platform;
 using Firepit.Core.ProjectConfig;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
@@ -158,6 +159,64 @@ public partial class MainWindow : Window
         {
             ShowToast($"Migrated {_pendingMigrationCount} project(s) to .firepit/config.json");
             _pendingMigrationCount = 0;
+        }
+        MaybePromptForMetaProject();
+    }
+
+    private void MaybePromptForMetaProject()
+    {
+        var platform = _settings.Platform ?? PlatformSettings.Defaults;
+        if (platform.MetaProjectPromptShown) return;
+
+        var bootstrapper = new MetaProjectBootstrapper();
+        if (bootstrapper.Exists(_settings.ProjectsRoot))
+        {
+            // Folder already exists — nothing to do, but record that we
+            // checked so subsequent launches skip the inspection.
+            PersistMetaProjectPromptShown();
+            return;
+        }
+
+        var create = MessageDialog.Show(
+            owner: this,
+            title: "Set up Firepit central project?",
+            message: $"Firepit can create a hidden '.firepit' project at:\n\n  {_settings.ProjectsRoot}\\.firepit\n\n" +
+                     "It's where Claude can manage settings across all your projects, plus a place for cross-project notes and inbox.\n\n" +
+                     "You can also do this later from Settings.",
+            primaryLabel: "Create",
+            secondaryLabel: "Not now");
+
+        PersistMetaProjectPromptShown();
+
+        if (!create) return;
+
+        try
+        {
+            var written = bootstrapper.Bootstrap(_settings.ProjectsRoot);
+            Log.Information("Meta-project seeded: {Count} files written under {Path}",
+                written.Count, bootstrapper.GetMetaProjectPath(_settings.ProjectsRoot));
+            ShowToast($"Created .firepit central project ({written.Count} files)");
+            // Refresh discovery so the new project shows up immediately.
+            ReloadProjectList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Meta-project bootstrap failed");
+            ShowToast($"Could not create .firepit: {ex.Message}", isError: true);
+        }
+    }
+
+    private void PersistMetaProjectPromptShown()
+    {
+        try
+        {
+            var current = _settings.Platform ?? PlatformSettings.Defaults;
+            _settings = _settings with { Platform = current with { MetaProjectPromptShown = true } };
+            _settingsStore.Save(_settings);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not persist MetaProjectPromptShown");
         }
     }
 

@@ -12,7 +12,8 @@ public sealed record FirepitSettings(
     UiSettings? Ui = null,
     IReadOnlyDictionary<string, McpServerSettings>? McpServers = null,
     IReadOnlyList<QuickLinkSettings>? QuickLinks = null,
-    IReadOnlyList<ProjectSettings>? Projects = null)
+    IReadOnlyList<ProjectSettings>? Projects = null,
+    PlatformSettings? Platform = null)
 {
     public static readonly FirepitSettings Defaults = new(
         ProjectsRoot: Path.Combine(
@@ -24,11 +25,23 @@ public sealed record FirepitSettings(
         Shells: ShellsSettings.Defaults,
         Terminal: TerminalThemeSettings.Defaults,
         Ui: UiSettings.Defaults,
+        Platform: PlatformSettings.Defaults,
         QuickLinks:
         [
             new QuickLinkSettings("GitHub",   "https://github.com/chloe-dream/{projectName}", QuickLinkTargetSetting.External, Icon: "github"),
             new QuickLinkSettings("Fishbowl", "https://localhost:7180/p/{projectName}",       QuickLinkTargetSetting.External, Icon: "fishbowl"),
         ]);
+}
+
+/// <summary>
+/// V0.5.0+ flags grouped under the "platform" key. Kept separate from
+/// existing nested records so the legacy schema stays clean.
+/// </summary>
+public sealed record PlatformSettings(
+    bool MetaProjectPromptShown = false,
+    bool InboxBadgesEnabled = true)
+{
+    public static readonly PlatformSettings Defaults = new();
 }
 
 /// <summary>
