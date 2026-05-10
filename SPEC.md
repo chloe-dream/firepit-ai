@@ -248,7 +248,7 @@ The smallest version of Firepit that solves the core pain.
 
 ### MCP Server Registry — "Kindling"
 
-The pain: running multiple agent-driven projects means configuring the same MCP servers per project, by hand, again and again — sometimes with per-project arguments (e.g. one Fishbowl invocation per project, distinguished only by an argument), often with locally-pathed binaries that drift out of sync between projects. Today every developer doing multi-project agent work hand-manages this; there is no clean tool.
+The pain: running multiple agent-driven projects means configuring the same MCP servers per project, by hand, again and again — sometimes with per-project credentials (e.g. one Fishbowl bearer token per project, each bound server-side to a different memory scope), often with locally-pathed binaries that drift out of sync between projects. Today every developer doing multi-project agent work hand-manages this; there is no clean tool.
 
 Firepit makes this a first-class concept. A central registry lives in the global settings (think of it as the *kindling* you stack to fuel each session); projects activate a subset, optionally with overrides. The agent adapter (Claude Code in V1) is responsible for translating the active set into the agent's expected format at session start. The registry itself is agent-agnostic: a Cursor or Aider adapter would project the same data into its own configuration shape.
 
@@ -497,7 +497,7 @@ Single JSON file at `%APPDATA%\Firepit\settings.json`:
       "agentArgs": ["--model", "sonnet"],
       "mcpServers": ["fishbowl", "grok-image"],   // active registry ids
       "mcpOverrides": {
-        "fishbowl": { "headers": { "X-Project": "tinderbox" } }
+        "fishbowl": { "headers": { "Authorization": "Bearer ${cred:firepit/fishbowl-tinderbox}" } }
       },
       "quickLinks": [
         // disables the global "Fishbowl" template for this project, replaces with a specific URL
