@@ -19,7 +19,34 @@ public sealed record ProjectConfig(
     IReadOnlyList<ProjectQuickLink>? QuickLinks = null,
     IReadOnlyList<ProjectMcpActivation>? McpActivations = null,
     ProjectAgentConfig? Agent = null,
-    ProjectSessionConfig? Session = null);
+    ProjectSessionConfig? Session = null,
+    IReadOnlyList<ProjectCommand>? Commands = null);
+
+/// <summary>
+/// User-defined toolbar buttons. Three variants:
+/// <list type="bullet">
+///   <item><c>type=shell</c>: spawn a process with <c>Command</c> + <c>Args</c> in the project dir</item>
+///   <item><c>type=claude-prompt</c>: inject <c>Prompt</c> into the active session's PTY as if the user typed it</item>
+///   <item><c>type=url</c>: open <c>Url</c> in the default browser (placeholder substitution applies)</item>
+/// </list>
+/// </summary>
+public sealed record ProjectCommand(
+    string Name,
+    ProjectCommandType Type,
+    string? Icon = null,
+    // Type-specific fields. Only the ones relevant to Type matter; others ignored.
+    string? Command = null,                // shell
+    IReadOnlyList<string>? Args = null,    // shell
+    string? Prompt = null,                 // claude-prompt
+    string? Url = null,                    // url
+    bool? Disabled = null);
+
+public enum ProjectCommandType
+{
+    Shell,
+    ClaudePrompt,
+    Url,
+}
 
 public sealed record ProjectQuickLink(
     string Name,

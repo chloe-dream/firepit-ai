@@ -102,7 +102,9 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.ExplorerRequested += (_, _) => OpenExplorer();
         _toolbar.ShellRequested += (_, _) => OpenExternalShell();
         _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
+        _toolbar.CommandClicked += (_, cmd) => RunCommand(cmd);
         _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
+        _toolbar.SetCommands(initialConfig?.Commands ?? []);
 
         _rekindleAffordance = BuildRekindleAffordance();
         _configRestartAffordance = BuildConfigRestartAffordance();
@@ -531,6 +533,47 @@ public sealed class SessionTab : IAsyncDisposable
         }
     }
 
+    private void RunCommand(Firepit.Core.ProjectConfig.ProjectCommand cmd)
+    {
+        try
+        {
+            switch (cmd.Type)
+            {
+                case Firepit.Core.ProjectConfig.ProjectCommandType.Shell:
+                    if (string.IsNullOrEmpty(cmd.Command)) return;
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = cmd.Command,
+                        Arguments = cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty,
+                        WorkingDirectory = Context.Path,
+                        UseShellExecute = true,
+                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
+                    });
+                    Log.Information("Ran shell command '{Name}' in {Path}", cmd.Name, Context.Path);
+                    break;
+                case Firepit.Core.ProjectConfig.ProjectCommandType.ClaudePrompt:
+                    if (string.IsNullOrEmpty(cmd.Prompt) || _ptyChannel is null) return;
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(cmd.Prompt + "\n");
+                    _ = _ptyChannel.WriteAsync(bytes, _cts?.Token ?? CancellationToken.None);
+                    Log.Information("Sent prompt to agent for '{Name}'", cmd.Name);
+                    break;
+                case Firepit.Core.ProjectConfig.ProjectCommandType.Url:
+                    if (string.IsNullOrEmpty(cmd.Url)) return;
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = cmd.Url,
+                        UseShellExecute = true,
+                    });
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Command '{Name}' failed", cmd.Name);
+            ShowFatal($"Command '{cmd.Name}' failed: {ex.Message}");
+        }
+    }
+
     private void OpenQuickLink(ResolvedQuickLink link)
     {
         if (!link.Available)
@@ -712,10 +755,11 @@ public sealed class SessionTab : IAsyncDisposable
         try
         {
             _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(Context));
+            _toolbar.SetCommands(newConfig?.Commands ?? []);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to refresh quick-links for {Project}", Context.Name);
+            Log.Warning(ex, "Failed to refresh quick-links / commands for {Project}", Context.Name);
         }
 
         if (NeedsRestart(_currentConfig, newConfig))

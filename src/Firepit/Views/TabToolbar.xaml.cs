@@ -5,7 +5,9 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using Firepit.Core.ProjectConfig;
 using Firepit.Core.QuickLinks;
+using Firepit.Resources;
 
 namespace Firepit.Views;
 
@@ -21,6 +23,87 @@ public partial class TabToolbar : UserControl
     public event EventHandler? ExplorerRequested;
     public event EventHandler? ShellRequested;
     public event EventHandler<ResolvedQuickLink>? QuickLinkClicked;
+    public event EventHandler<ProjectCommand>? CommandClicked;
+
+    public void SetCommands(IReadOnlyList<ProjectCommand> commands)
+    {
+        var buttons = new List<Button>(commands.Count);
+        var style = (Style)FindResource("ToolbarIconButton");
+        foreach (var cmd in commands)
+        {
+            if (cmd.Disabled == true) continue;
+            var button = new Button
+            {
+                Content = BuildCommandContent(cmd),
+                Style = style,
+                Tag = cmd,
+                ToolTip = BuildCommandTooltip(cmd),
+            };
+            button.Click += OnCommandClick;
+            buttons.Add(button);
+        }
+        Commands.ItemsSource = buttons;
+    }
+
+    private void OnCommandClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: ProjectCommand cmd })
+        {
+            CommandClicked?.Invoke(this, cmd);
+        }
+    }
+
+    private static string BuildCommandTooltip(ProjectCommand cmd) => cmd.Type switch
+    {
+        ProjectCommandType.Shell         => $"Shell: {cmd.Command} {string.Join(' ', cmd.Args ?? [])}",
+        ProjectCommandType.ClaudePrompt  => $"Send to Claude: \"{Truncate(cmd.Prompt, 80)}\"",
+        ProjectCommandType.Url           => $"Open: {cmd.Url}",
+        _                                => cmd.Name,
+    };
+
+    private static string Truncate(string? s, int max) =>
+        string.IsNullOrEmpty(s) ? "" :
+        s.Length <= max ? s : s[..max] + "…";
+
+    private static StackPanel BuildCommandContent(ProjectCommand cmd)
+    {
+        var (geometry, mode) = IconResolver.Resolve(cmd.Icon, fallbackName: cmd.Name);
+
+        var path = new Path
+        {
+            Data = geometry,
+            Width = 14,
+            Height = 14,
+            Margin = new Thickness(0, 0, 7, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Stretch = Stretch.Uniform,
+        };
+        var foregroundBinding = new Binding(nameof(Control.Foreground))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Button) },
+        };
+        if (mode == Firepit.Resources.IconMode.Fill)
+        {
+            path.SetBinding(Shape.FillProperty, foregroundBinding);
+        }
+        else
+        {
+            path.SetBinding(Shape.StrokeProperty, foregroundBinding);
+            path.StrokeThickness = 1.2;
+            path.StrokeLineJoin = PenLineJoin.Round;
+            path.Stretch = Stretch.None;
+        }
+
+        var text = new TextBlock
+        {
+            Text = cmd.Name,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(path);
+        panel.Children.Add(text);
+        return panel;
+    }
 
     public void SetQuickLinks(IReadOnlyList<ResolvedQuickLink> links)
     {
