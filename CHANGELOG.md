@@ -3,7 +3,7 @@
 All notable changes to Firepit. Format roughly follows [Keep a Changelog].
 Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
-## [0.5.0] — Firepit as Platform — *unreleased*
+## [0.5.0] — Firepit as Platform — 2026-05-11
 
 The biggest shift since V1: Firepit becomes a meta-workspace. Per-project
 config lives next to your code, Claude can talk to Firepit through MCP, and
