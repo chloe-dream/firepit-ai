@@ -103,6 +103,21 @@
                     <TextBlock Text="Shell" VerticalAlignment="Center" />
                 </StackPanel>
             </Button>
+            <Button DockPanel.Dock="Left"
+                    ToolTip="Open this project's .firepit/config.json (creates a commented template if missing)"
+                    Style="{StaticResource ToolbarIconButton}"
+                    Click="OnConfigureClick">
+                <StackPanel Orientation="Horizontal">
+                    <Path Data="{StaticResource IconGear}"
+                          Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"
+                          StrokeThickness="1.2"
+                          StrokeLineJoin="Round"
+                          Width="14" Height="14"
+                          Margin="0,0,7,0"
+                          VerticalAlignment="Center" />
+                    <TextBlock Text="Configure" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
             <Border DockPanel.Dock="Left" Width="1" Margin="6,4" Background="#332B22" />
             <ItemsControl x:Name="QuickLinks" DockPanel.Dock="Left">
                 <ItemsControl.ItemsPanel>

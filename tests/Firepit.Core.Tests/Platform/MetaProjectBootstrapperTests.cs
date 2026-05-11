@@ -37,10 +37,42 @@ public class MetaProjectBootstrapperTests : IDisposable
         Assert.True(File.Exists(Path.Combine(meta, ".gitignore")));
         Assert.True(File.Exists(Path.Combine(meta, ".claude", "settings.json")));
         Assert.True(File.Exists(Path.Combine(meta, ".firepit", "config.json")));
+        Assert.True(File.Exists(Path.Combine(meta, ".firepit", "inbox", ".gitkeep")));
         Assert.True(File.Exists(Path.Combine(meta, "notes", "README.md")));
-        Assert.True(File.Exists(Path.Combine(meta, "inbox", ".gitkeep")));
+
+        Assert.False(Directory.Exists(Path.Combine(meta, "inbox")),
+            "root-level inbox/ was retired in favour of .firepit/inbox/ — bootstrapper must not recreate it.");
 
         Assert.Equal(7, written.Count);
+    }
+
+    [Fact]
+    public void Bootstrap_CleansUpEmptyLegacyRootInbox()
+    {
+        var meta = _bootstrapper.GetMetaProjectPath(_projectsRoot);
+        var legacyInbox = Path.Combine(meta, "inbox");
+        Directory.CreateDirectory(legacyInbox);
+        File.WriteAllText(Path.Combine(legacyInbox, ".gitkeep"), "");
+
+        _bootstrapper.Bootstrap(_projectsRoot);
+
+        Assert.False(Directory.Exists(legacyInbox),
+            "an empty legacy root inbox/ should be removed on bootstrap to clear post-upgrade drift.");
+    }
+
+    [Fact]
+    public void Bootstrap_PreservesNonEmptyLegacyRootInbox()
+    {
+        var meta = _bootstrapper.GetMetaProjectPath(_projectsRoot);
+        var legacyInbox = Path.Combine(meta, "inbox");
+        Directory.CreateDirectory(legacyInbox);
+        File.WriteAllText(Path.Combine(legacyInbox, "user-note.md"), "important");
+
+        _bootstrapper.Bootstrap(_projectsRoot);
+
+        Assert.True(Directory.Exists(legacyInbox),
+            "a legacy root inbox/ with user-curated content must not be deleted.");
+        Assert.True(File.Exists(Path.Combine(legacyInbox, "user-note.md")));
     }
 
     [Fact]

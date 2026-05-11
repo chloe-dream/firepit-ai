@@ -46,7 +46,10 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly TabToolbar _toolbar;
     private readonly Border _rekindleAffordance;
     private readonly Border _configRestartAffordance;
+    private readonly Border _mcpHealthAffordance;
+    private readonly TextBlock _mcpHealthLabel;
     private readonly StackPanel _loadingIndicator;
+    private readonly McpHealthChecker _mcpHealth = new();
     private Firepit.Core.ProjectConfig.ProjectConfig? _currentConfig;
     private readonly RotateTransform _spinnerRotate;
     private readonly Storyboard _spinnerStoryboard;
@@ -101,6 +104,7 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.ResumeRequested += (_, _) => _ = RekindleAsync(resume: true, confirmIfBurning: true);
         _toolbar.ExplorerRequested += (_, _) => OpenExplorer();
         _toolbar.ShellRequested += (_, _) => OpenExternalShell();
+        _toolbar.ConfigureRequested += (_, _) => OpenProjectConfig();
         _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
         _toolbar.CommandClicked += (_, cmd) => RunCommand(cmd);
         _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
@@ -108,6 +112,7 @@ public sealed class SessionTab : IAsyncDisposable
 
         _rekindleAffordance = BuildRekindleAffordance();
         _configRestartAffordance = BuildConfigRestartAffordance();
+        (_mcpHealthAffordance, _mcpHealthLabel) = BuildMcpHealthAffordance();
 
         _terminalArea.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x16, 0x12));
 
@@ -374,6 +379,14 @@ public sealed class SessionTab : IAsyncDisposable
             }
         }
         await _mcpProjector.ApplyAsync(Context, active, ct).ConfigureAwait(true);
+
+        var issues = _mcpHealth.Check(active);
+        foreach (var issue in issues)
+        {
+            Log.Warning("MCP health issue for {Project}: {Server} — {Detail}",
+                Context.Name, issue.ServerId, issue.Detail);
+        }
+        ShowMcpHealthIssues(issues);
     }
 
     private async Task TeardownSessionAsync()
@@ -501,6 +514,26 @@ public sealed class SessionTab : IAsyncDisposable
         catch (Exception ex)
         {
             ShowFatal($"Cannot open Explorer: {ex.Message}");
+        }
+    }
+
+    private void OpenProjectConfig()
+    {
+        try
+        {
+            var projectId = _currentConfig?.Id ?? Context.Name;
+            var path = Firepit.Core.ProjectConfig.ProjectConfigScaffold.EnsureScaffold(Context.Path, projectId);
+            Log.Information("Opening project config for {Project} at {Path}", Context.Name, path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open project config for {Project}", Context.Name);
+            ShowFatal($"Cannot open project config: {ex.Message}");
         }
     }
 
@@ -818,6 +851,66 @@ public sealed class SessionTab : IAsyncDisposable
     private void HideConfigRestartAffordance()
     {
         _configRestartAffordance.Visibility = Visibility.Collapsed;
+    }
+
+    private (Border Border, TextBlock Label) BuildMcpHealthAffordance()
+    {
+        var label = new TextBlock
+        {
+            Text = string.Empty,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0xC9, 0x7B)),
+            FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            FontSize = ResolveFontSize("MediumFontSize", 13),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(14, 6, 14, 6),
+        };
+
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x2A, 0x21, 0x1A)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xCD, 0x5C, 0x5C)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 10, 0, 0),
+            Cursor = Cursors.Hand,
+            Visibility = Visibility.Collapsed,
+            ToolTip = "Click to dismiss. Edit %APPDATA%\\Firepit\\settings.json or the project's .firepit/config.json to fix.",
+            Child = label,
+        };
+        Panel.SetZIndex(border, 60);
+        border.MouseLeftButtonUp += (_, _) => HideMcpHealthAffordance();
+        return (border, label);
+    }
+
+    private void ShowMcpHealthIssues(IReadOnlyList<McpHealthIssue> issues)
+    {
+        if (issues.Count == 0)
+        {
+            HideMcpHealthAffordance();
+            return;
+        }
+
+        var summary = issues.Count == 1
+            ? $"⚠ MCP server failed: {issues[0].ServerId} — {issues[0].Detail}"
+            : $"⚠ {issues.Count} MCP servers failed: {string.Join(", ", issues.Select(i => i.ServerId))}";
+        _mcpHealthLabel.Text = summary;
+        _mcpHealthAffordance.ToolTip = string.Join("\n",
+            issues.Select(i => $"{i.ServerId}: {i.Detail}")) +
+            "\n\nClick to dismiss. Edit %APPDATA%\\Firepit\\settings.json or the project's .firepit/config.json to fix.";
+
+        if (!_terminalArea.Children.Contains(_mcpHealthAffordance))
+        {
+            _terminalArea.Children.Add(_mcpHealthAffordance);
+        }
+        _mcpHealthAffordance.Visibility = Visibility.Visible;
+    }
+
+    private void HideMcpHealthAffordance()
+    {
+        _mcpHealthAffordance.Visibility = Visibility.Collapsed;
     }
 
     private static bool NeedsRestart(

@@ -64,7 +64,7 @@ See [`docs/FISHBOWL.md`](https://github.com/chloe-dream/firepit-ai/blob/main/doc
 ## Folders
 
 - `notes/` — free-form cross-project notes you'll want to come back to
-- `inbox/` — incoming messages from other projects' Claudes
+- `.firepit/inbox/` — incoming messages from other projects' Claudes
 - `.firepit/config.json` — this project's own Firepit config
 - `.claude/settings.json` — Claude Code config (firepit MCP preregistered)
 
@@ -85,7 +85,7 @@ See `CLAUDE.md` for the full surface.
 
 ## Inbox
 
-When another project's Claude pings you (`firepit_send_to`), the message lands in `inbox/`. Move processed items to `inbox/processed/` so you can see what's still pending.
+When another project's Claude pings you (`firepit_send_to`), the message lands in `.firepit/inbox/`. Move processed items to `.firepit/inbox/processed/` so you can see what's still pending.
 
 ## Notes
 
@@ -127,8 +127,8 @@ Suggested patterns:
 
     public const string GitIgnore = """
 # Inbox is local — messages from your own machine to your own machine.
-inbox/
-inbox/processed/
+.firepit/inbox/
+.firepit/inbox/processed/
 
 # Local agent state
 .claude/projects/

@@ -22,6 +22,7 @@ public partial class TabToolbar : UserControl
     public event EventHandler? ResumeRequested;
     public event EventHandler? ExplorerRequested;
     public event EventHandler? ShellRequested;
+    public event EventHandler? ConfigureRequested;
     public event EventHandler<ResolvedQuickLink>? QuickLinkClicked;
     public event EventHandler<ProjectCommand>? CommandClicked;
 
@@ -175,10 +176,11 @@ public partial class TabToolbar : UserControl
         return panel;
     }
 
-    private void OnRekindleClick(object sender, RoutedEventArgs e) => RekindleRequested?.Invoke(this, EventArgs.Empty);
-    private void OnResumeClick(object sender, RoutedEventArgs e)   => ResumeRequested?.Invoke(this, EventArgs.Empty);
-    private void OnExplorerClick(object sender, RoutedEventArgs e) => ExplorerRequested?.Invoke(this, EventArgs.Empty);
-    private void OnShellClick(object sender, RoutedEventArgs e)    => ShellRequested?.Invoke(this, EventArgs.Empty);
+    private void OnRekindleClick(object sender, RoutedEventArgs e)  => RekindleRequested?.Invoke(this, EventArgs.Empty);
+    private void OnResumeClick(object sender, RoutedEventArgs e)    => ResumeRequested?.Invoke(this, EventArgs.Empty);
+    private void OnExplorerClick(object sender, RoutedEventArgs e)  => ExplorerRequested?.Invoke(this, EventArgs.Empty);
+    private void OnShellClick(object sender, RoutedEventArgs e)     => ShellRequested?.Invoke(this, EventArgs.Empty);
+    private void OnConfigureClick(object sender, RoutedEventArgs e) => ConfigureRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnQuickLinkClick(object sender, RoutedEventArgs e)
     {

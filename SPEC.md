@@ -2,6 +2,8 @@
 
 > *Summon your agents.*
 
+> **Status note (2026-05-11):** This document is the original V1 vision/positioning brief. Firepit shipped v0.5.0 in mid-2026; the prose below still captures *why* the product exists, but the **Tech Stack**, **Architecture diagram**, and **Configuration** sections have moved on. See [§Shipped — what v0.5.0 added beyond this spec](#shipped--what-v050-added-beyond-this-spec) at the bottom for the current surface, and `docs/ARCHITECTURE.md` for the live technical contract. Last verified against: v0.5.x.
+
 A local, personal workspace for AI coding agents. Firepit gives you tabs, status indicators, and a project switcher around the CLI tools you already use — without dragging you into a cloud or an editor.
 
 ---
@@ -79,7 +81,7 @@ That is the experience Firepit is built to deliver.
 | Runtime | **.NET 10** | Modern, AOT-capable, single-file deployment |
 | UI Shell | **WPF** | Mature, native, no MSIX packaging hell, supports WebView2 hosting cleanly |
 | Terminal Tile | **WebView2 + xterm.js** | xterm.js is the de-facto standard for terminal emulation; WebView2 uses system Edge, no Electron-style bundle |
-| PTY Backend | **Pty.Net** (or direct ConPTY P/Invoke) | ConPTY is required for proper TUI rendering — stdin/stdout redirection won't work |
+| PTY Backend | **Porta.Pty** (NuGet ConPTY wrapper) | ConPTY is required for proper TUI rendering — stdin/stdout redirection won't work. Direct P/Invoke was attempted in M1 and shelved; see `docs/ARCHITECTURE.md §4.1` |
 | Config Storage | **JSON** in `%APPDATA%\Firepit` | Simple, human-readable, version-controllable if user wants |
 | Future Image AI | **ONNX Runtime** + local models (rembg/u2net) | Local-first, no API cost, reuses pattern from existing internal projects |
 
@@ -118,7 +120,7 @@ flowchart TB
 
     subgraph Backend[" Backend Services "]
         ProjectScanner[Project Scanner]
-        ProcessHost["Agent Process Host<br/>(ConPTY via Pty.Net)"]
+        ProcessHost["Agent Process Host<br/>(ConPTY via Porta.Pty)"]
         ActivityDetector[Activity Detector]
         ConfigStore[Config Store]
     end
@@ -453,6 +455,8 @@ The split between `Firepit` (UI) and `Firepit.Core` (logic) is deliberate. If a 
 
 ## Configuration
 
+> **Update (v0.5.0):** Per-project configuration moved out of the global `settings.json` and into a dedicated `<project>/.firepit/config.json` file (`quickLinks`, `mcpActivations`, `agent`, `session.envOverrides`, `commands`). The `projects[]` shape below still parses as a deprecated fallback during migration. The `mcpServers` global registry shape and the secret-token mechanism are unchanged. See `docs/ARCHITECTURE.md §9` and the meta-project's `CLAUDE.md` for the current schema.
+
 Single JSON file at `%APPDATA%\Firepit\settings.json`:
 
 ```jsonc
@@ -545,11 +549,29 @@ Tentative: **MIT**. Permissive, widely understood, no friction for adoption. Rev
 Firepit stands on shoulders:
 
 - **xterm.js** for the terminal emulation that makes V1 possible at all
-- **Pty.Net / Microsoft ConPTY** for the PTY plumbing
+- **Porta.Pty / Microsoft ConPTY** for the PTY plumbing
 - **WebView2** for being a sane way to embed web rendering in native Windows apps
 - **Anthropic's Claude Code, and the broader agent CLI ecosystem** for being the reason this tool needs to exist
 
 ---
 
-*Document version: 0.2 — adds MCP server registry, quick-links, project sub-tab vision*
-*Status: pre-development, design phase*
+## Shipped — what v0.5.0 added beyond this spec
+
+The original V1 vision (above) shipped in M0–M8 (tags `m0-skeleton` through `m8-polish`) and `v0.2.0`/`v0.3.0`/`v0.5.0`. Not all of v0.5.0's surface is described in the prose above; the live additions are:
+
+- **The meta-project (`.firepit/` central workspace)** — Firepit auto-bootstraps a "central" project at the projects root with its own `CLAUDE.md`, MCP wiring, and notes/inbox. Code: `src/Firepit.Core/Platform/MetaProjectBootstrapper.cs`. Lets a single Claude session reach into the whole projects directory via the Firepit MCP tools.
+- **MCP bridge (`firepit-mcp.exe`)** — a stdio MCP server bundled alongside `Firepit.exe`. Exposes `firepit_list_projects`, `firepit_open_tab`, `firepit_focus_tab`, `firepit_close_tab`, `firepit_reload`, `firepit_send_to`, plus `firepit://projects`, `firepit://sessions`, `firepit://settings` resources. Code under `src/Firepit.Mcp/`.
+- **Cross-project inbox (Phase 5)** — `firepit_send_to` writes a markdown note into the target project's `.firepit/inbox/`; an `InboxWatcher` shows an unread badge on the recipient's tab.
+- **Per-project commands** — toolbar buttons of types `shell`, `claude-prompt`, and `url`, configured in `.firepit/config.json`'s `commands[]`.
+- **Hot-reloading project config** — edits to `.firepit/config.json` re-render quick-links and toolbar commands live; MCP/agent/env changes show a "restart needed" banner.
+- **Activity-state extensions** — OSC 9;4 progress sequences pin Burning while the agent is "thinking" (V1.1.4).
+- **Tab interactions** — drag-reorder, terminal search (V1.2).
+- **Inno Setup installer** (V1.12) — `FirepitSetup-<version>-win-x64.exe` shipped alongside the publish archive; adds the install dir to PATH so `firepit-mcp` is resolvable.
+- **Custom commands and icon flexibility** (Phase 6).
+
+Anything not in this list either matches the V1 vision above or is V2/V3 work tracked in `docs/ROADMAP.md` and `docs/PLATFORM.md`.
+
+---
+
+*Document version: 0.3 — original V1 vision preserved; sections updated in place for v0.5.0 reality, see `docs/ARCHITECTURE.md` for the live technical contract.*
+*Status: shipped — v0.5.0 (2026-05-11). The vision/positioning prose is still load-bearing; the tech-stack, architecture diagram, and configuration sections have moved on.*

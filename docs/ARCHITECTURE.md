@@ -4,6 +4,8 @@ Technical detail for Firepit V1. Companion to `SPEC.md` (product vision) and `RO
 
 This document is the contract for *how* V1 is built. Decisions here are binding; deviations need a written reason.
 
+> **Last verified against:** v0.5.x (2026-05-11). Document revision 0.3.
+
 ---
 
 ## 1. Solution Layout
@@ -182,11 +184,12 @@ The bridge between WPF host and xterm.js carries two byte streams (PTY-out → r
 { "type": "ready" }
 { "type": "input", "b64": "<base64>" }
 { "type": "resize", "cols": 120, "rows": 40 }   // user resized window
+{ "type": "progress", "active": true }          // OSC 9;4 "thinking" signal (added V1.1.4)
 ```
 
 **Throughput note.** `PostWebMessageAsString` round-trips through JSON serialization on the WebView2 side. For typical agent output (kilobytes per second) this is fine. If profiling shows the bridge as a bottleneck under heavy output (large diffs, file dumps), switch to `AddHostObjectToScript` exposing a host object whose method takes a byte-array transferable. Do not optimize prematurely; do measure once V1 dogfoods real workloads.
 
-**Hard rule.** The bridge accepts exactly the message types above. No `eval`, no "execute command", no host-side property setters callable from JS. The web side is treated as a hostile renderer.
+**Hard rule.** The bridge accepts exactly the message types above — extensions land here by amendment, not by ad-hoc additions. The web side is treated as a hostile renderer: no `eval`, no "execute command", no host-side property setters callable from JS.
 
 ### 3.4 Fonts
 
@@ -234,6 +237,7 @@ Caller surface (`IPtyChannel`) is unchanged either way — the choice is encapsu
 - Process fails to spawn (executable not found): surface `AgentLaunchException` with the executable name. Tab transitions `Igniting → Dead` immediately. User-facing status template: *"Cannot summon agent: `<command>` not found on PATH."* — `<command>` is interpolated from the failing adapter's launch spec, never hardcoded.
 - Process exits with non-zero code: tab transitions to `Dead`; exit code stored on the session for the toolbar tooltip.
 - PTY write fails (pipe closed): treat as process death; trigger waiter.
+- Configured-but-unspawnable MCP server: see §9.7 — symmetric surface, non-fatal to the session.
 
 ---
 
@@ -345,17 +349,18 @@ public sealed record McpRegistryEntry(
 
 public enum McpTransport { Stdio, Http, Sse }
 
-public sealed record McpProjectActivation(
-    IReadOnlyList<string> ActiveIds,                     // registered ids active for this project
-    IReadOnlyDictionary<string, McpOverride> Overrides); // optional per-id overrides
-
-public sealed record McpOverride(
-    IReadOnlyList<string>? Args,                         // null = inherit registry default
-    IReadOnlyDictionary<string, string?>? Environment,
-    IReadOnlyDictionary<string, string?>? Headers);
+// Per-project activation lives in <project>/.firepit/config.json — one
+// record per activated server, with optional inline overrides. The legacy
+// settings.Projects[] shape (separate ActiveIds + Overrides dict) is still
+// accepted as a fallback during migration but is deprecated.
+public sealed record ProjectMcpActivation(
+    string Id,
+    IReadOnlyList<string>? ArgOverrides = null,          // null = inherit registry default
+    IReadOnlyDictionary<string, string?>? EnvOverrides = null,
+    IReadOnlyDictionary<string, string?>? HeaderOverrides = null);
 ```
 
-Strings within `Args`, `Environment`, and `Headers` may contain reference tokens (`${env:NAME}`, `${cred:firepit/<key>}`) that are resolved at session start, not at config-load time.
+Strings within `ArgOverrides`, `EnvOverrides`, and `HeaderOverrides` may contain reference tokens (`${env:NAME}`, `${cred:firepit/<key>}`) that are resolved at session start, not at config-load time. The same applies to the corresponding fields on the registry entry.
 
 ### 9.2 Service Surface
 
@@ -419,6 +424,12 @@ The registry is loaded once at startup. Resolution happens **per session start**
 - Schema validation of an MCP server's tool list before launch
 - DPAPI-encrypted in-file secret storage (V1.1 candidate)
 - A graphical registry editor — V1 ships the JSON file plus a minimal "open in editor" affordance
+
+### 9.7 Lifecycle errors
+
+Symmetric to §4.4 (agent spawn failure). For each resolved stdio server with a `Command`, a pre-flight PATH check runs at session start. Failures are non-fatal — the session still launches, the missing server is just absent — but they surface to the user via a non-modal banner pinned to the workspace tab. User-facing template: *"⚠ MCP server failed: `<id>` — `<command>` not found on PATH."* The check covers the "binary missing" failure mode that produced issue #4; runtime crashes inside an actually-launched server are out of scope for V1 (would require parsing Claude Code's `/mcp` output).
+
+HTTP/SSE servers are not pre-flighted (no PATH dependency); their failure surface is left to the agent's own MCP output.
 
 ---
 
@@ -507,7 +518,7 @@ Retention: 14 days, max 10 MB per file. Format: compact JSON for grep-ability.
 
 ## 13. Distribution
 
-### 11.1 Publishing
+### 13.1 Publishing
 
 ```
 dotnet publish src/Firepit -c Release -r win-x64 \
@@ -516,9 +527,9 @@ dotnet publish src/Firepit -c Release -r win-x64 \
   -p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-Output: `Firepit.exe` plus a small handful of native deps (WebView2 SDK natives extracted on first run). Drop the directory into any path and run.
+Output: `Firepit.exe` plus a small handful of native deps (WebView2 SDK natives extracted on first run). The `firepit-mcp.exe` stdio MCP bridge is published as a sibling single-file binary (`src/Firepit.Mcp/`) and shipped alongside `Firepit.exe`. The Inno Setup installer (V1.12) places both in `%LOCALAPPDATA%\Programs\Firepit\` and adds that directory to the user's PATH so a workspace's `.claude/settings.json` can reference `firepit-mcp` by bare name — see `docs/V1.12-INSTALLER.md` for the resolution decision.
 
-### 11.2 WebView2 Runtime Prerequisite
+### 13.2 WebView2 Runtime Prerequisite
 
 Modern Win10 (≥ 21H2) and all Win11 ship the Evergreen WebView2 Runtime. Older systems need the bootstrapper. V1: detect on startup, show a dialog with a download link if missing. **Do not** bundle the bootstrapper in V1 — adds ~150 MB and almost no users will need it.
 
@@ -527,19 +538,19 @@ var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
 // throws if missing — catch, show dialog, exit
 ```
 
-### 11.3 Embedded Resources
+### 13.3 Embedded Resources
 
 `xterm.bundle.js` (≈400 KB minified), `terminal.html`, font file, CSS — all embedded in `Firepit.Web` as `EmbeddedResource` items. Build step: an MSBuild `Target BeforeBuild` runs `npm install && npm run bundle` in `src/Firepit.Web/Resources/` to produce the bundle. Lock file is committed.
 
-### 11.4 Releases
+### 13.4 Releases
 
-GitHub Releases, manual. Tag `vX.Y.Z`, attach the published archive, write release notes. No auto-update in V1.
+GitHub Releases, manual. Tag `vX.Y.Z`, attach the published archive plus the Inno Setup installer (`FirepitSetup-<version>-win-x64.exe`), write release notes. No auto-update in V1.
 
 ---
 
 ## 14. Testing Strategy
 
-### 12.1 Layers
+### 14.1 Layers
 
 | Layer | Test type | Approach |
 |---|---|---|
@@ -549,13 +560,13 @@ GitHub Releases, manual. Tag `vX.Y.Z`, attach the published archive, write relea
 | `Firepit.Web` | Integration | WebView2 round-trip ("write hello, expect hello rendered, type 'q', expect bytes received"). CI-skippable on non-Windows. |
 | `Firepit` (WPF) | Manual / smoke | No automated UI tests in V1. Manual checklist in ROADMAP per milestone. |
 
-### 12.2 Seams
+### 14.2 Seams
 
 - `IPtyChannel` makes the process host testable without a real child.
 - `IActivityClock` makes time-dependent state machine deterministic — drive `UtcNow` from the test.
 - `IAgentAdapter` enables a `FakeAdapter` that runs `pwsh.exe -NoLogo -Command "while ($true) { Write-Host hi; Start-Sleep 1 }"` for integration tests.
 
-### 12.3 What Not to Mock
+### 14.3 What Not to Mock
 
 - Don't mock `CoreWebView2`. Either use it for real or don't test that code.
 - Don't mock the filesystem in adapter tests (golden files are simple I/O).

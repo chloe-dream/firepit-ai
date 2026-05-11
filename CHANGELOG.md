@@ -3,6 +3,42 @@
 All notable changes to Firepit. Format roughly follows [Keep a Changelog].
 Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
+## [Unreleased]
+
+### Fixed
+
+- **Installer adds Firepit to user PATH** so `firepit-mcp` is resolvable from any
+  shell or ConPTY child without manually editing `settings.json`. Opt-out
+  available as a wizard task. Removed cleanly on uninstall. Closes #3, #6.
+- **MCP spawn failures now surface in the workspace tab.** Pre-flight PATH
+  resolution runs at session start; missing-binary failures show a non-modal
+  banner ("⚠ MCP server failed: `<id>` — `<command>` not found on PATH"),
+  click to dismiss. Closes #4.
+- **Meta-project no longer creates a dead root-level `inbox/`** — actual inbox
+  traffic has always gone to `.firepit/inbox/`. Templates (CLAUDE.md, README.md,
+  .gitignore) updated to match. Existing meta-projects auto-clean an empty
+  legacy `inbox/` on next bootstrap; non-empty ones are left alone. Closes #5.
+
+### Added
+
+- **"Configure" toolbar button** opens the project's `.firepit/config.json`,
+  scaffolding a commented JSONC template if missing. Lowest-friction entrypoint
+  to the per-project config surface. Closes #9.
+
+### Docs
+
+- **`docs/V1.12-INSTALLER.md` v0.2** — adds the MCP-bridge resolution decision
+  and a "first-run end-to-end check" template for future planning docs.
+- **`docs/ARCHITECTURE.md` v0.3** — fixes §13/§14 subsection numbering, adds
+  the V1.1.4 `progress` bridge message, corrects the `ProjectMcpActivation`
+  schema, adds §9.7 (MCP lifecycle errors, symmetric to §4.4), and documents
+  `firepit-mcp.exe` in §13 Distribution. Closes #7.
+- **`SPEC.md` v0.3** — original V1 vision preserved; tech-stack (`Pty.Net` →
+  `Porta.Pty`), architecture diagram, and configuration sections updated in
+  place. New "Shipped — what v0.5.0 added beyond this spec" section enumerates
+  meta-project, MCP bridge, inbox, commands, hot-reload, OSC 9;4, V1.2 tab
+  interactions, and the V1.12 installer. Closes #8.
+
 ## [0.5.0] — Firepit as Platform — 2026-05-11
 
 The biggest shift since V1: Firepit becomes a meta-workspace. Per-project

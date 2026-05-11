@@ -41,18 +41,23 @@ UninstallDisplayName=Firepit {#AppVersion}
 WizardImageStretch=no
 ShowLanguageDialog=no
 DisableWelcomePage=no
+; Triggers a WM_SETTINGCHANGE broadcast at install/uninstall completion so
+; newly-spawned shells (and Firepit's own ConPTY children) pick up the
+; updated PATH without a logoff.
+ChangesEnvironment=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
+Name: "addtopath";   Description: "Add Firepit to PATH (so Claude Code can reach firepit-mcp)"; GroupDescription: "Integration:"; Flags: checkedonce
 
 [Files]
 Source: "..\bin\win-x64\Firepit.exe";   DestDir: "{app}"; Flags: ignoreversion
 ; firepit-mcp.exe is the stdio bridge that lets Claude Code talk to Firepit
-; via MCP. Lives next to Firepit.exe so the pipe-MCP wiring just works after
-; install — projects' .claude/settings.json points at this filename.
+; via MCP. Lives next to Firepit.exe; the "addtopath" task in [Tasks] is what
+; makes the bare filename in projects' .claude/settings.json resolvable.
 Source: "..\bin\win-x64\firepit-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -68,6 +73,9 @@ Filename: "{app}\Firepit.exe"; Description: "Launch Firepit"; Flags: nowait post
 ; default — projects and settings survive an uninstall.
 
 [Code]
+const
+  EnvironmentKey = 'Environment';
+
 var
   ProjectsPage: TInputDirWizardPage;
 
@@ -86,6 +94,44 @@ end;
 function GetProjectsRoot(Param: string): string;
 begin
   Result := ProjectsPage.Values[0];
+end;
+
+// PATH manipulation — adds/removes the install directory to/from the user's
+// PATH (HKCU\Environment). Necessary so `firepit-mcp` is resolvable from any
+// shell or ConPTY child without absolute paths in committed settings.json
+// files. Idempotent on add; tolerant on remove.
+procedure EnvAddPath(Path: string);
+var
+  Paths: string;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths) then
+    Paths := '';
+
+  if Pos(';' + Uppercase(Path) + ';', ';' + Uppercase(Paths) + ';') > 0 then
+    exit;
+
+  if Paths = '' then
+    Paths := Path
+  else
+    Paths := Paths + ';' + Path;
+
+  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths);
+end;
+
+procedure EnvRemovePath(Path: string);
+var
+  Paths: string;
+  P: Integer;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths) then
+    exit;
+
+  P := Pos(';' + Uppercase(Path) + ';', ';' + Uppercase(Paths) + ';');
+  if P = 0 then
+    exit;
+
+  Delete(Paths, P - 1, Length(Path) + 1);
+  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Paths);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -112,5 +158,14 @@ begin
       Root := AnsiString(GetProjectsRoot(''));
       SaveStringToFile(MarkerPath, Root, False);
     end;
+
+    if WizardIsTaskSelected('addtopath') then
+      EnvAddPath(ExpandConstant('{app}'));
   end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    EnvRemovePath(ExpandConstant('{app}'));
 end;
