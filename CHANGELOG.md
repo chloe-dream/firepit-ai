@@ -7,6 +7,28 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ### Added
 
+- **`Ctrl+PgDn` / `Ctrl+PgUp` cycle tabs** as browser-style alternates to
+  `Ctrl+Tab` / `Ctrl+Shift+Tab`. Same handler, just different muscle memory.
+
+### Changed
+
+- **`tabs.autoReloadOnConfigChange` now defaults to `true`.** v0.5.0's
+  hot-reload pipeline has been running stable through v0.5.5; the explicit
+  "field-test first, flip later" deferral is resolved. Quick-link edits in
+  `.firepit/config.json` apply live by default. Existing user settings
+  override this default as before — flip back to `false` in `settings.json`
+  if you'd rather use the explicit `firepit_reload` MCP tool exclusively.
+
+### Docs
+
+- **README refreshed for v0.5.x** — adds the lazy-tab-restore, window
+  placement, keyboard shortcut, and right-click-menu lines to the V1 core
+  feature list. Status banner now points at the actual latest release.
+
+## [0.5.5] — 2026-05-12
+
+### Added
+
 - **Window position and size persist across restarts.** Move or resize the
   Firepit window, close it, reopen — it comes back where you left it.
   Maximized state is preserved too (the un-maximized rect is also saved so

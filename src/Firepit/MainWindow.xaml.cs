@@ -117,6 +117,12 @@ public partial class MainWindow : Window
             (_, _) => CycleTab(+1));
         Bind(new KeyGesture(System.Windows.Input.Key.Tab, ModifierKeys.Control | ModifierKeys.Shift),
             (_, _) => CycleTab(-1));
+        // Ctrl+PgDn / Ctrl+PgUp as alternates — browser-style, some users
+        // muscle-memory these instead of Ctrl+Tab.
+        Bind(new KeyGesture(System.Windows.Input.Key.PageDown, ModifierKeys.Control),
+            (_, _) => CycleTab(+1));
+        Bind(new KeyGesture(System.Windows.Input.Key.PageUp, ModifierKeys.Control),
+            (_, _) => CycleTab(-1));
         for (var i = 1; i <= 9; i++)
         {
             var n = i;

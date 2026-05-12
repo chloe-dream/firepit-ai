@@ -96,15 +96,15 @@ public sealed record TabSettings(
     bool PersistAcrossRestarts,
     int ActivityIdleThresholdMs,
     // Phase 2: when true, FileSystemWatcher re-applies <project>/.firepit/config.json
-    // edits live. Off by default in v0.5.0 — the explicit firepit_reload MCP tool is
-    // the canonical reload path. Field-test the swap-file behaviour first, flip default
-    // in a follow-up release.
-    bool AutoReloadOnConfigChange = false)
+    // edits live. Default flipped to true in v0.5.6 after field-testing the
+    // swap-file behaviour through v0.5.0–v0.5.5. The explicit firepit_reload MCP
+    // tool remains available for agents that want to force a reload.
+    bool AutoReloadOnConfigChange = true)
 {
     public static readonly TabSettings Defaults = new(
         PersistAcrossRestarts: true,
         ActivityIdleThresholdMs: 1500,
-        AutoReloadOnConfigChange: false);
+        AutoReloadOnConfigChange: true);
 }
 
 public sealed record ShellsSettings(string Preferred)

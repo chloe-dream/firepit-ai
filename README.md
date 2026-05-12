@@ -4,7 +4,7 @@
 
 A local, personal workspace for AI coding agents. Tabs, status indicators, and a project switcher around the CLI tools you already use — without dragging you into a cloud or an editor.
 
-> **Status: V1 feature-complete + V0.5.0 platform layer.** Releases up to `v0.4.0` have shipped. `v0.5.0` (the platform layer — per-project `.firepit/` config, MCP server, hidden meta-project, cross-Claude inbox, custom commands) is in dogfooding. See [`CHANGELOG.md`](./CHANGELOG.md).
+> **Status: V1 feature-complete + V0.5.x platform layer in daily-driver use.** Latest release: `v0.5.6` — see [`CHANGELOG.md`](./CHANGELOG.md). The v0.5 line added per-project `.firepit/` config, the Firepit MCP server, a hidden meta-project, cross-Claude inbox, lazy tab restore, keyboard shortcuts, and window placement persistence.
 
 ---
 
@@ -24,14 +24,16 @@ It is **not** a cloud orchestrator. It is **not** an IDE. It is a console worksp
 ## Features
 
 ### V1 core
-- **Project list** — auto-discovered from a configurable root directory; folders qualify by containing `CLAUDE.md` or `.claude/`, plus manual entries
-- **Tabs** — one per active session, persistent across restarts (opt-in), drag-to-reorder, terminal search (`Ctrl+Shift+F`)
+- **Project list** — auto-discovered from a configurable root directory; folders qualify by containing `CLAUDE.md` or `.claude/`, plus manual entries. The `.firepit` meta-project always pins to top
+- **Tabs** — one per active session, drag-to-reorder, terminal search (`Ctrl+Shift+F`), right-click context menu (Close / Close others / Close all)
 - **Activity indicator** — *cold* / *igniting* / *burning* / *embers* / *out* per tab, driven by PTY traffic plus Claude Code's `OSC 9;4` thinking signal
-- **Toolbar** — Rekindle, Resume Last, Open in Explorer, Open external shell, plus per-project quick-link buttons
+- **Toolbar** — Rekindle, Resume Last, Open in Explorer, Open external shell, Configure, plus per-project quick-link buttons and custom commands
 - **MCP server registry ("kindling")** — global catalog of MCP servers, activated per project with optional argument / env / header overrides
 - **Secret references** — `${env:NAME}` and `${cred:firepit/<key>}` (Windows Credential Manager) tokens resolved at session-start time; raw secrets never sit in `settings.json`
 - **Single-instance** — second launch focuses the existing window via a named pipe
-- **Tab restoration** — open tabs at last close come back on next launch and resume their sessions
+- **Lazy tab restore** — on relaunch, only the tab you last had focused starts its session. Click any other tab to wake it up. Cuts cold-start cost roughly in proportion to tab count
+- **Window placement** — position, size, and maximized state persist across restarts (off-screen rects ignored)
+- **Keyboard shortcuts** — `Ctrl+Shift+T` open project picker, `Ctrl+Shift+W` close tab, `Ctrl+Tab`/`Ctrl+Shift+Tab` and `Ctrl+PgDn`/`Ctrl+PgUp` cycle, `Ctrl+Alt+1..9` jump. Shift-prefixed variants intentionally avoid stomping on bash readline inside the terminal
 
 ### V0.5.0 platform layer
 - **`.firepit/config.json` per project** — quick-links, MCP activations, agent overrides travel with your repo; gitignore at your discretion
