@@ -1,5 +1,6 @@
 using System.IO;
 using Firepit.Core.Agents;
+using Firepit.Core.Platform;
 
 namespace Firepit.Core.Projects;
 
@@ -50,8 +51,15 @@ public sealed class ProjectDiscovery : IProjectDiscovery
             }
         }
 
+        // The .firepit meta-project always pins to the top — it's the hub for
+        // cross-project work, so finding it should never require scrolling.
+        // OrderBy is stable; ties preserve the manual-then-discovered ordering.
         return manual
             .Concat(discovered.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(p => string.Equals(
+                p.Name,
+                MetaProjectBootstrapper.MetaProjectName,
+                StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ToArray();
     }
 

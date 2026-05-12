@@ -75,6 +75,35 @@ public class ProjectDiscoveryTests : IDisposable
     }
 
     [Fact]
+    public void Scan_MetaProject_PinsToTopAheadOfManualAndAlphabetical()
+    {
+        // .firepit must be first regardless of manual entries or alpha order.
+        var alphaFirst = Path.Combine(_root, "aardvark");
+        Directory.CreateDirectory(Path.Combine(alphaFirst, ".claude"));
+        var meta = Path.Combine(_root, ".firepit");
+        Directory.CreateDirectory(Path.Combine(meta, ".claude"));
+        var zebra = Path.Combine(_root, "zebra");
+        Directory.CreateDirectory(Path.Combine(zebra, ".claude"));
+
+        var discovery = new ProjectDiscovery([new FakeAdapter("a", ["CLAUDE.md", ".claude"])]);
+        var manual = new[]
+        {
+            new Project("manual-one", @"C:\fake\one", "a"),
+            new Project("manual-two", @"C:\fake\two", "a"),
+        };
+
+        var result = discovery.Scan(_root, manual);
+
+        Assert.Equal(".firepit", result[0].Name);
+        // Manual entries keep their relative ordering after the pinned meta.
+        Assert.Equal("manual-one", result[1].Name);
+        Assert.Equal("manual-two", result[2].Name);
+        // Remaining discovered stay alphabetical.
+        Assert.Equal("aardvark", result[3].Name);
+        Assert.Equal("zebra", result[4].Name);
+    }
+
+    [Fact]
     public void Scan_MissingRoot_ReturnsManualOnly()
     {
         var discovery = new ProjectDiscovery([new FakeAdapter("a", ["CLAUDE.md"])]);

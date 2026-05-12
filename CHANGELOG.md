@@ -5,6 +5,27 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- **`.firepit` meta-project always pins to top of the project picker** so the
+  cross-project hub is one click away regardless of manual entries or alpha
+  order. Other discovered projects stay alphabetical; manual entries keep
+  their relative ordering after the pin.
+
+### Fixed
+
+- **GitHub quick-link icon now resolves to the Octocat** instead of the
+  generic chain-link fallback. Root cause: resource-key case mismatch
+  (`IconGitHub` vs the `Capitalise()`-normalised lookup `IconGithub`).
+- **Personal GitHub/Fishbowl URLs removed from `FirepitSettings.Defaults`.**
+  Previously the defaults shipped with `github.com/chloe-dream/{projectName}`
+  and `localhost:7180/p/{projectName}` — author-specific config that
+  shouldn't have leaked into the OSS defaults. QuickLinks now start empty;
+  configure via `settings.json` globals or per-project `.firepit/config.json`.
+  Existing user settings are untouched.
+
+## [0.5.1] — 2026-05-12
+
 ### Fixed
 
 - **Installer adds Firepit to user PATH** so `firepit-mcp` is resolvable from any

@@ -25,12 +25,11 @@ public sealed record FirepitSettings(
         Shells: ShellsSettings.Defaults,
         Terminal: TerminalThemeSettings.Defaults,
         Ui: UiSettings.Defaults,
-        Platform: PlatformSettings.Defaults,
-        QuickLinks:
-        [
-            new QuickLinkSettings("GitHub",   "https://github.com/chloe-dream/{projectName}", QuickLinkTargetSetting.External, Icon: "github"),
-            new QuickLinkSettings("Fishbowl", "https://localhost:7180/p/{projectName}",       QuickLinkTargetSetting.External, Icon: "fishbowl"),
-        ]);
+        Platform: PlatformSettings.Defaults);
+    // QuickLinks are intentionally empty by default — they're user-specific
+    // (GitHub org/user, internal tools, personal dashboards). The per-project
+    // .firepit/config.json scaffold shows commented examples of how to add
+    // them. settings.json globals also work; configure via Settings dialog.
 }
 
 /// <summary>

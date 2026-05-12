@@ -55,7 +55,7 @@ public static class IconResolver
 
     private static IconMode ModeFor(string key) => key switch
     {
-        "IconGitHub"   => IconMode.Fill,
+        "IconGithub"   => IconMode.Fill,
         "IconFishbowl" => IconMode.Fill,
         _              => IconMode.Stroke,
     };
