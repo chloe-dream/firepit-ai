@@ -70,6 +70,7 @@ public partial class MainWindow : Window
 
         _stateStore = new JsonStateStore();
         RunProjectConfigMigrationIfNeeded();
+        ApplyPersistedWindowPlacement();
 
         _quickLinks = BuildQuickLinkService(_settings);
         _secretResolver = new CompositeSecretResolver(
@@ -149,6 +150,73 @@ public partial class MainWindow : Window
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         WindowDarkMode.EnableForWindow(this);
+    }
+
+    /// <summary>
+    /// Restore the previously-saved window position and size. Applied in the
+    /// constructor (before the window first appears) so there is no
+    /// CenterScreen → saved-rect flicker. Validates that the rect intersects
+    /// the current virtual screen — if the monitor it came from is gone
+    /// (laptop disconnected from a dock), falls back to the XAML defaults.
+    /// </summary>
+    private void ApplyPersistedWindowPlacement()
+    {
+        var placement = _stateStore.Load().Window;
+        if (placement is null) return;
+
+        if (!IsOnScreen(placement))
+        {
+            Log.Information("Saved window placement is offscreen — falling back to CenterScreen");
+            return;
+        }
+
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = placement.Left;
+        Top = placement.Top;
+        Width = placement.Width;
+        Height = placement.Height;
+        if (placement.IsMaximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
+    }
+
+    private static bool IsOnScreen(WindowPlacement p)
+    {
+        // At least 100x40 px of the window must intersect the virtual screen,
+        // otherwise the user has no way to drag it back into view.
+        var screen = new System.Windows.Rect(
+            SystemParameters.VirtualScreenLeft,
+            SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth,
+            SystemParameters.VirtualScreenHeight);
+        var win = new System.Windows.Rect(p.Left, p.Top, p.Width, p.Height);
+        var visible = System.Windows.Rect.Intersect(screen, win);
+        return !visible.IsEmpty && visible.Width >= 100 && visible.Height >= 40;
+    }
+
+    /// <summary>
+    /// Snapshot the current window bounds for persistence. When the window
+    /// is maximized, <see cref="System.Windows.Window.RestoreBounds"/> gives
+    /// the un-maximized rect — that's what we save, so the next launch
+    /// remembers both the maximized state *and* the size to restore to.
+    /// </summary>
+    private WindowPlacement CaptureWindowPlacement()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        var bounds = maximized ? RestoreBounds : new System.Windows.Rect(Left, Top, Width, Height);
+        // Window minimized at close → RestoreBounds gives the pre-minimize
+        // rect, which is what we want too.
+        if (bounds.IsEmpty || double.IsNaN(bounds.Left))
+        {
+            bounds = new System.Windows.Rect(Left, Top, Width, Height);
+        }
+        return new WindowPlacement(
+            Left: bounds.Left,
+            Top: bounds.Top,
+            Width: bounds.Width,
+            Height: bounds.Height,
+            IsMaximized: maximized);
     }
 
     private void ApplyChromeMetricsFromResources()
@@ -1099,7 +1167,8 @@ public partial class MainWindow : Window
                         })
                         .ToArray(),
                     ProjectConfigMigrationDone: _stateStore.Load().ProjectConfigMigrationDone,
-                    ActiveTabProjectName: activeName);
+                    ActiveTabProjectName: activeName,
+                    Window: CaptureWindowPlacement());
                 _stateStore.Save(snapshot);
             }
             catch { /* persistence is best-effort */ }

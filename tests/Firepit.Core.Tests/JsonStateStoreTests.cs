@@ -86,6 +86,39 @@ public class JsonStateStoreTests : IDisposable
     }
 
     [Fact]
+    public void Roundtrip_PreservesWindowPlacement()
+    {
+        var store = new JsonStateStore(_statePath);
+        var saved = new AppState(
+            AppState.CurrentVersion,
+            [],
+            Window: new WindowPlacement(Left: 100.5, Top: 200, Width: 1280, Height: 720, IsMaximized: true));
+        store.Save(saved);
+
+        var loaded = store.Load();
+        Assert.NotNull(loaded.Window);
+        Assert.Equal(100.5, loaded.Window!.Left);
+        Assert.Equal(200, loaded.Window.Top);
+        Assert.Equal(1280, loaded.Window.Width);
+        Assert.Equal(720, loaded.Window.Height);
+        Assert.True(loaded.Window.IsMaximized);
+    }
+
+    [Fact]
+    public void Load_LegacyStateWithoutWindowField_ReturnsNull()
+    {
+        File.WriteAllText(_statePath, """
+            {
+              "version": 1,
+              "tabs": []
+            }
+            """);
+        var store = new JsonStateStore(_statePath);
+        var loaded = store.Load();
+        Assert.Null(loaded.Window);
+    }
+
+    [Fact]
     public void Load_LegacyStateWithoutActiveField_ReturnsNull()
     {
         // Pre-v0.5.3 state.json had no activeTabProjectName field. New code

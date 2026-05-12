@@ -7,6 +7,18 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ### Added
 
+- **Window position and size persist across restarts.** Move or resize the
+  Firepit window, close it, reopen — it comes back where you left it.
+  Maximized state is preserved too (the un-maximized rect is also saved so
+  restore-down lands at the right place). State schema gains a nullable
+  `window` field; legacy `state.json` files without it fall back to
+  CenterScreen + 1180×700 (the previous default). Off-screen rects (e.g.,
+  laptop returned from a disconnected dock) are silently ignored.
+
+## [0.5.4] — 2026-05-12
+
+### Added
+
 - **Tab keyboard shortcuts** — `Ctrl+Shift+T` opens the project picker,
   `Ctrl+Shift+W` closes the active tab, `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle
   forward/back, `Ctrl+Alt+1..9` jump to tab N. Shift-prefixed variants
