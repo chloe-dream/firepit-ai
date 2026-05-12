@@ -89,6 +89,61 @@ public partial class MainWindow : Window
         Tabs.DragOver  += OnTabsDragOver;
         Tabs.DragLeave += OnTabsDragLeave;
         Tabs.Drop      += OnTabsDrop;
+
+        RegisterKeyboardShortcuts();
+    }
+
+    /// <summary>
+    /// Window-level shortcuts. Chosen to coexist with bash readline inside the
+    /// embedded terminal — Ctrl+W and Ctrl+T are reserved by readline, so the
+    /// Firepit equivalents take a Shift. Ctrl+1..9 conflicts with some apps, so
+    /// tab-jump uses Ctrl+Alt+N (Windows-Terminal convention). Ctrl+Tab and
+    /// Ctrl+Shift+Tab are safe (terminals don't bind them).
+    /// </summary>
+    private void RegisterKeyboardShortcuts()
+    {
+        Bind(new KeyGesture(System.Windows.Input.Key.T, ModifierKeys.Control | ModifierKeys.Shift),
+            (_, _) => ProjectPicker.IsOpen = !ProjectPicker.IsOpen);
+        Bind(new KeyGesture(System.Windows.Input.Key.W, ModifierKeys.Control | ModifierKeys.Shift),
+            (_, _) =>
+            {
+                if (Tabs.SelectedItem is TabItem t)
+                {
+                    _ = CloseTabAsync(t, confirmIfBurning: true);
+                }
+            });
+        Bind(new KeyGesture(System.Windows.Input.Key.Tab, ModifierKeys.Control),
+            (_, _) => CycleTab(+1));
+        Bind(new KeyGesture(System.Windows.Input.Key.Tab, ModifierKeys.Control | ModifierKeys.Shift),
+            (_, _) => CycleTab(-1));
+        for (var i = 1; i <= 9; i++)
+        {
+            var n = i;
+            Bind(new KeyGesture(System.Windows.Input.Key.D0 + i, ModifierKeys.Control | ModifierKeys.Alt),
+                (_, _) => JumpToTab(n));
+        }
+    }
+
+    private void Bind(KeyGesture gesture, ExecutedRoutedEventHandler handler)
+    {
+        var cmd = new RoutedCommand();
+        CommandBindings.Add(new CommandBinding(cmd, handler));
+        InputBindings.Add(new KeyBinding(cmd, gesture));
+    }
+
+    private void CycleTab(int direction)
+    {
+        if (Tabs.Items.Count < 2) return;
+        var idx = Tabs.SelectedIndex;
+        if (idx < 0) idx = 0;
+        var next = ((idx + direction) % Tabs.Items.Count + Tabs.Items.Count) % Tabs.Items.Count;
+        ((TabItem)Tabs.Items[next]!).IsSelected = true;
+    }
+
+    private void JumpToTab(int n)
+    {
+        if (n < 1 || n > Tabs.Items.Count) return;
+        ((TabItem)Tabs.Items[n - 1]!).IsSelected = true;
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -419,6 +474,7 @@ public partial class MainWindow : Window
             Header = session.Header,
             Tag = session,
             ToolTip = project.Path,
+            ContextMenu = BuildTabContextMenu(),
         };
         tabItem.PreviewMouseLeftButtonDown += OnTabPreviewMouseDown;
         tabItem.PreviewMouseMove           += OnTabPreviewMouseMove;
@@ -454,6 +510,51 @@ public partial class MainWindow : Window
         else
         {
             _ = session.EnsureInitializedAsync();
+        }
+    }
+
+    private ContextMenu BuildTabContextMenu()
+    {
+        var menu = new ContextMenu();
+        var close = new MenuItem { Header = "Close" };
+        close.Click += (s, _e) =>
+        {
+            if (((MenuItem)s!).Parent is ContextMenu m && m.PlacementTarget is TabItem t)
+            {
+                _ = CloseTabAsync(t, confirmIfBurning: true);
+            }
+        };
+        var closeOthers = new MenuItem { Header = "Close others" };
+        closeOthers.Click += (s, _e) =>
+        {
+            if (((MenuItem)s!).Parent is ContextMenu m && m.PlacementTarget is TabItem keep)
+            {
+                _ = CloseOthersAsync(keep);
+            }
+        };
+        var closeAll = new MenuItem { Header = "Close all" };
+        closeAll.Click += (_s, _e) => { _ = CloseAllAsync(); };
+        menu.Items.Add(close);
+        menu.Items.Add(closeOthers);
+        menu.Items.Add(closeAll);
+        return menu;
+    }
+
+    private async Task CloseOthersAsync(TabItem keep)
+    {
+        var victims = Tabs.Items.OfType<TabItem>().Where(t => !ReferenceEquals(t, keep)).ToArray();
+        foreach (var t in victims)
+        {
+            await CloseTabAsync(t, confirmIfBurning: true);
+        }
+    }
+
+    private async Task CloseAllAsync()
+    {
+        var victims = Tabs.Items.OfType<TabItem>().ToArray();
+        foreach (var t in victims)
+        {
+            await CloseTabAsync(t, confirmIfBurning: true);
         }
     }
 
@@ -586,11 +687,40 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnTabCloseClick(object sender, RoutedEventArgs e)
+    private void OnTabCloseClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: TabItem tabItem } || tabItem.Tag is not SessionTab session)
+        if (sender is Button { Tag: TabItem tabItem })
+        {
+            _ = CloseTabAsync(tabItem, confirmIfBurning: true);
+        }
+    }
+
+    /// <summary>
+    /// Single tab-close entry point shared by the close button, the right-click
+    /// context menu, and keyboard shortcuts. When the session is Burning and
+    /// confirmation is requested, prompts before killing — matches the Rekindle
+    /// confirm UX, so accidentally hitting Ctrl+W on a live agent doesn't lose
+    /// work.
+    /// </summary>
+    private async Task CloseTabAsync(TabItem tabItem, bool confirmIfBurning)
+    {
+        if (tabItem.Tag is not SessionTab session)
         {
             return;
+        }
+
+        if (confirmIfBurning && session.State == Core.Sessions.SessionState.Burning)
+        {
+            var confirmed = MessageDialog.Show(
+                owner: this,
+                title: "Close tab?",
+                message: $"The session in {session.Context.Name} is still burning. Closing the tab kills the running agent.",
+                primaryLabel: "Close",
+                secondaryLabel: "Keep open");
+            if (!confirmed)
+            {
+                return;
+            }
         }
 
         var key = _openTabs.FirstOrDefault(kvp => ReferenceEquals(kvp.Value.TabItem, tabItem)).Key;

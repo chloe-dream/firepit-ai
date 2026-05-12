@@ -5,6 +5,25 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- **Tab keyboard shortcuts** — `Ctrl+Shift+T` opens the project picker,
+  `Ctrl+Shift+W` closes the active tab, `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle
+  forward/back, `Ctrl+Alt+1..9` jump to tab N. Shift-prefixed variants
+  (instead of plain `Ctrl+W`/`Ctrl+T`) avoid stomping on bash readline's
+  delete-word and transpose-chars bindings inside the embedded terminal.
+- **Tab right-click menu** — Close, Close others, Close all. Common
+  terminal-app UX; each item runs through the same close path with the
+  Burning-session confirmation prompt.
+
+### Changed
+
+- **Closing a Burning tab now asks for confirmation** instead of killing the
+  agent silently. Mirrors the existing Rekindle-confirm UX. Embers, Dead,
+  and Igniting tabs still close without a prompt.
+
+## [0.5.3] — 2026-05-12
+
 ### Changed
 
 - **Restored tabs load lazily — only the previously-active tab starts at

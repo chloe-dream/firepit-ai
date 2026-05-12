@@ -20,9 +20,11 @@
             ResizeBorderThickness="6"
             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
-    <Window.InputBindings>
-        <KeyBinding Key="T" Modifiers="Control" Command="{Binding OpenPickerCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
-    </Window.InputBindings>
+    <!-- Keyboard shortcuts are registered in code-behind
+         (RegisterKeyboardShortcuts) to keep the conflict-aware logic
+         — Ctrl+Shift+W/T over Ctrl+W/T to coexist with bash readline —
+         close to the handlers that consume them. -->
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition x:Name="CaptionRow" Height="36" />
