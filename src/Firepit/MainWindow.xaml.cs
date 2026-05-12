@@ -43,6 +43,9 @@ public partial class MainWindow : Window
     private readonly IProjectConfigStore _projectConfigStore = new JsonProjectConfigStore();
     private readonly Dictionary<string, IProjectConfigWatcher> _configWatchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, InboxWatcher> _inboxWatchers = new(StringComparer.OrdinalIgnoreCase);
+    // Resume flag for tabs that were restored but haven't been activated yet.
+    // Cleared when the deferred tab is activated for the first time.
+    private readonly Dictionary<string, bool> _deferredResume = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingMigrationCount;
 
     // Drag-reorder state. _dragSource is the TabItem under cursor on
@@ -248,12 +251,28 @@ public partial class MainWindow : Window
         }
 
         var byName = _allProjects.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+        TabItem? activeTabItem = null;
         foreach (var tab in state.Tabs)
         {
-            if (byName.TryGetValue(tab.ProjectName, out var project))
+            if (!byName.TryGetValue(tab.ProjectName, out var project))
             {
-                OpenSessionTab(project, resume: tab.LastSessionResumable);
+                continue;
             }
+            var (tabItem, _) = AddSessionTab(project, resume: tab.LastSessionResumable, deferred: true);
+            if (string.Equals(tab.ProjectName, state.ActiveTabProjectName, StringComparison.OrdinalIgnoreCase))
+            {
+                activeTabItem = tabItem;
+            }
+        }
+
+        // Decide which tab to focus. Saved active-tab wins; fallback to the
+        // last tab in the list (pre-v0.5.3 behaviour) so users who upgrade
+        // mid-session still see something sensible. Selecting the tab fires
+        // OnTabSelectionChanged → that starts the session for that tab only.
+        activeTabItem ??= Tabs.Items.OfType<TabItem>().LastOrDefault();
+        if (activeTabItem is not null)
+        {
+            activeTabItem.IsSelected = true;
         }
     }
 
@@ -364,16 +383,26 @@ public partial class MainWindow : Window
             existing.TabItem.IsSelected = true;
             return;
         }
+        AddSessionTab(project, resume, deferred: false);
+    }
 
+    /// <summary>
+    /// Build the tab UI and register it in <see cref="_openTabs"/>. In eager
+    /// mode the session starts immediately and the tab is focused. In deferred
+    /// mode (used by <see cref="RestoreTabsFromState"/>) the resume flag is
+    /// stashed for later; the session only starts when the user clicks the tab.
+    /// </summary>
+    private (TabItem TabItem, SessionTab Session) AddSessionTab(Project project, bool resume, bool deferred)
+    {
         if (!_adapters.TryGetValue(project.AdapterId, out var adapter))
         {
             Log.Warning("No adapter registered for project {Project} (adapterId={AdapterId})",
                 project.Name, project.AdapterId);
             ShowToast($"No adapter for {project.Name}", isError: true);
-            return;
+            throw new InvalidOperationException($"No adapter for {project.Name}");
         }
-        Log.Information("Opening tab for project {Project} (resume={Resume}) via adapter {Adapter}",
-            project.Name, resume, adapter.Id);
+        Log.Information("Opening tab for project {Project} (resume={Resume}, deferred={Deferred}) via adapter {Adapter}",
+            project.Name, resume, deferred, adapter.Id);
 
         var initialConfig = SafeLoadProjectConfig(project.Path);
         var session = new SessionTab(
@@ -397,11 +426,27 @@ public partial class MainWindow : Window
         Tabs.Items.Add(tabItem);
         Tabs.Visibility = Visibility.Visible;
         EmptyState.Visibility = Visibility.Collapsed;
-        tabItem.IsSelected = true;
 
         _openTabs[project.Path] = (tabItem, session);
         TryAttachConfigWatcher(project.Path, session);
         TryAttachInboxWatcher(project.Path, session);
+
+        if (deferred)
+        {
+            // Remember the resume flag — OnTabSelectionChanged consumes it the
+            // first time this tab is activated.
+            _deferredResume[project.Path] = resume;
+        }
+        else
+        {
+            tabItem.IsSelected = true;
+            StartSession(session, resume);
+        }
+        return (tabItem, session);
+    }
+
+    private static void StartSession(SessionTab session, bool resume)
+    {
         if (resume)
         {
             _ = session.RekindleAsync(resume: true, confirmIfBurning: false);
@@ -517,6 +562,17 @@ public partial class MainWindow : Window
             TabContentHost.Visibility = Visibility.Visible;
             EmptyState.Visibility = Visibility.Collapsed;
 
+            // Deferred-restore path: a tab that was created on app start but
+            // not eagerly initialized lights up here, the moment the user
+            // first selects it. The spinner shows via the existing
+            // ShowLoadingIndicator path inside StartSessionAsync.
+            if (!session.IsStarted &&
+                _deferredResume.TryGetValue(session.Context.Path, out var resume))
+            {
+                _deferredResume.Remove(session.Context.Path);
+                StartSession(session, resume);
+            }
+
             // Defer focus until layout settles — calling immediately during
             // SelectionChanged races the WebView2 hwnd attach and the focus
             // call no-ops. One dispatcher tick later is enough.
@@ -541,6 +597,7 @@ public partial class MainWindow : Window
         if (key is not null)
         {
             _openTabs.Remove(key);
+            _deferredResume.Remove(key);
             DisposeConfigWatcher(key);
             DisposeInboxWatcher(key);
         }
@@ -896,6 +953,9 @@ public partial class MainWindow : Window
                 // Iterate Tabs.Items (visual order) rather than _openTabs.Values
                 // (insertion order) so drag-reordered sessions restore in the
                 // user's chosen layout.
+                var activeName = (Tabs.SelectedItem as TabItem)?.Tag is SessionTab activeSession
+                    ? activeSession.Context.Name
+                    : null;
                 var snapshot = new AppState(
                     Version: AppState.CurrentVersion,
                     Tabs: Tabs.Items.OfType<TabItem>()
@@ -907,7 +967,9 @@ public partial class MainWindow : Window
                                 ProjectName: s.Context.Name,
                                 LastSessionResumable: s.State != Core.Sessions.SessionState.Dead);
                         })
-                        .ToArray());
+                        .ToArray(),
+                    ProjectConfigMigrationDone: _stateStore.Load().ProjectConfigMigrationDone,
+                    ActiveTabProjectName: activeName);
                 _stateStore.Save(snapshot);
             }
             catch { /* persistence is best-effort */ }

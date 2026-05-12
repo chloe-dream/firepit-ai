@@ -96,8 +96,11 @@ public sealed class SessionTab : IAsyncDisposable
         (_loadingIndicator, _spinnerRotate, _spinnerStoryboard) = BuildLoadingIndicator(context.Name);
 
         _terminalArea = new Grid();
-        _terminalArea.Children.Add(_loadingIndicator);
-        StartSpinner();
+        // Loading indicator is mounted lazily by ShowLoadingIndicator() when
+        // StartSessionAsync runs. A SessionTab can be created in deferred mode
+        // — UI ready, session not yet started — and then activated later when
+        // the user clicks it. Pre-mounting the spinner would visually claim
+        // "this tab is loading" the moment it's constructed.
 
         _toolbar = new TabToolbar();
         _toolbar.RekindleRequested += (_, _) => _ = RekindleAsync(resume: false, confirmIfBurning: true);
@@ -208,7 +211,22 @@ public sealed class SessionTab : IAsyncDisposable
 
     public SessionState State => _detector.State;
 
+    /// <summary>
+    /// True once <see cref="EnsureInitializedAsync"/> or
+    /// <see cref="RekindleAsync"/> has been called for this tab. Deferred
+    /// tabs (created on restore but not yet activated) return false; their
+    /// PTY + WebView2 only spin up when the user actually clicks them.
+    /// </summary>
+    public bool IsStarted => _initialized;
+
     public Task EnsureInitializedAsync() => StartSessionAsync(resume: false);
+
+    /// <summary>
+    /// Deferred-mode entry point: identical to <see cref="EnsureInitializedAsync"/>
+    /// but takes the resume flag from the persisted state. Used by the tab-
+    /// selection handler when a restored tab is activated for the first time.
+    /// </summary>
+    public Task EnsureInitializedAsync(bool resume) => StartSessionAsync(resume);
 
     /// <summary>
     /// Hand focus to the embedded terminal so the user can type immediately

@@ -7,6 +7,17 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ### Changed
 
+- **Restored tabs load lazily — only the previously-active tab starts at
+  launch.** Other restored tabs sit cold (no spinner, no PTY) until the user
+  clicks them. The first click triggers init and shows the spinner. Cuts
+  startup CPU + memory roughly in proportion to tab count, and the tab the
+  user last had focused is the one Firepit prioritises. State schema gains a
+  new `activeTabProjectName` field (nullable, backwards-compatible).
+
+## [0.5.2] — 2026-05-12
+
+### Changed
+
 - **`.firepit` meta-project always pins to top of the project picker** so the
   cross-project hub is one click away regardless of manual entries or alpha
   order. Other discovered projects stay alphabetical; manual entries keep
