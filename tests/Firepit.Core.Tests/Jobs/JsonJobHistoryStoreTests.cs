@@ -38,7 +38,7 @@ public class JsonJobHistoryStoreTests : IDisposable
     public async Task RecordAsync_WritesFileWithSortableTimestampName()
     {
         var store = new JsonJobHistoryStore();
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Scheduled,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
             MakeOutcome(), CancellationToken.None);
 
         var dir = Path.Combine(_projectPath, ".firepit", "runs", "check-mails");
@@ -51,7 +51,7 @@ public class JsonJobHistoryStoreTests : IDisposable
     public async Task RecordedFile_RoundtripsAllFields()
     {
         var store = new JsonJobHistoryStore();
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Manual,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Manual,
             MakeOutcome(), CancellationToken.None);
 
         var records = store.Load(_projectPath, "check-mails");
@@ -59,6 +59,7 @@ public class JsonJobHistoryStoreTests : IDisposable
 
         Assert.Equal("check-mails", rec.JobName);
         Assert.Equal("demo", rec.ProjectName);
+        Assert.Equal("/check-mails", rec.Prompt);
         Assert.Equal(JobTrigger.Manual, rec.Trigger);
         Assert.Equal(JobRunStatus.Success, rec.Status);
         Assert.Equal(0, rec.ExitCode);
@@ -74,9 +75,9 @@ public class JsonJobHistoryStoreTests : IDisposable
         var older  = new DateTimeOffset(2026, 5, 13, 8, 0, 0, TimeSpan.Zero);
         var newer  = new DateTimeOffset(2026, 5, 13, 9, 0, 0, TimeSpan.Zero);
 
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Scheduled,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
             MakeOutcome(startedAt: older, endedAt: older.AddSeconds(5)), CancellationToken.None);
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Scheduled,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
             MakeOutcome(startedAt: newer, endedAt: newer.AddSeconds(5)), CancellationToken.None);
 
         var last = store.GetLastRunStartedAt(_projectPath, "check-mails");
@@ -132,7 +133,7 @@ public class JsonJobHistoryStoreTests : IDisposable
         await File.WriteAllTextAsync(ancientPath, "{}");
 
         // RecordAsync triggers retention pass on every write.
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Scheduled,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
             MakeOutcome(), CancellationToken.None);
 
         Assert.False(File.Exists(ancientPath), "expected ancient record to be deleted by retention");
@@ -170,10 +171,10 @@ public class JsonJobHistoryStoreTests : IDisposable
         var store = new JsonJobHistoryStore();
         var ts = new DateTimeOffset(2026, 5, 13, 8, 30, 0, TimeSpan.Zero);
 
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Scheduled,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
             MakeOutcome(startedAt: ts.AddMilliseconds(100), endedAt: ts.AddSeconds(1)),
             CancellationToken.None);
-        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Manual,
+        await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Manual,
             MakeOutcome(startedAt: ts.AddMilliseconds(750), endedAt: ts.AddSeconds(1).AddMilliseconds(750)),
             CancellationToken.None);
 

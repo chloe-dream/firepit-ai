@@ -36,14 +36,14 @@ public class JobSchedulerTests
 
     private sealed class FakeHistory : IJobHistoryStore
     {
-        public readonly ConcurrentBag<(string Job, JobTrigger Trigger, JobRunStatus Status)> Records = new();
+        public readonly ConcurrentBag<(string Job, string Prompt, JobTrigger Trigger, JobRunStatus Status)> Records = new();
         public readonly ConcurrentDictionary<string, DateTimeOffset> LastRun = new();
         public int RecoverCalls;
 
         public Task RecordAsync(string projectPath, string projectName, string jobName,
-            JobTrigger trigger, JobRunOutcome outcome, CancellationToken ct)
+            string prompt, JobTrigger trigger, JobRunOutcome outcome, CancellationToken ct)
         {
-            Records.Add((jobName, trigger, outcome.Status));
+            Records.Add((jobName, prompt, trigger, outcome.Status));
             LastRun[$"{projectPath}||{jobName}"] = outcome.StartedAt;
             return Task.CompletedTask;
         }
@@ -246,6 +246,34 @@ public class JobSchedulerTests
         Assert.Single(runner.Invocations);
         runner.Gate!.SetResult();
         await Task.Delay(50);
+    }
+
+    [Fact]
+    public async Task InvalidateProject_ClearsJobStateAndAllowsImmediateRefire()
+    {
+        // First tick at 09:30:30 fires; InvalidateProject drops LastFiredUtc;
+        // a second tick at the same wall-clock time refires because the anchor
+        // is back to the scheduler's startup instant.
+        var clock = new FakeClock { UtcNow = new DateTimeOffset(2026, 5, 13, 9, 0, 0, TimeSpan.Zero) };
+        var runner = new FakeRunner();
+        var history = new FakeHistory();
+        var source = new StaticSource { Entries = { Entry("check-mails", "*/30 * * * *") } };
+
+        await using var sched = new JobScheduler(source, runner, history, clock);
+
+        clock.UtcNow = new DateTimeOffset(2026, 5, 13, 9, 30, 30, TimeSpan.Zero);
+        await sched.TickOnceAsync(CancellationToken.None);
+        await Task.Delay(40);
+        Assert.Single(runner.Invocations);
+
+        sched.InvalidateProject(@"C:\projects\demo");
+
+        await sched.TickOnceAsync(CancellationToken.None);
+        await Task.Delay(40);
+        // Without invalidation the second tick at the same slot wouldn't refire
+        // (cf. SecondTickAtSameSlot_DoesNotRefire). Invalidation restores the
+        // anchor so the slot is "due" again from the scheduler's POV.
+        Assert.Equal(2, runner.Invocations.Count);
     }
 
     [Fact]

@@ -18,15 +18,15 @@ namespace Firepit.Process;
 /// </summary>
 public sealed class ProcessJobRunner : IJobRunner
 {
-    private readonly Func<string, string?> _spilloverPathFactory;
+    private readonly Func<JobRunRequest, string?> _spilloverPathFactory;
 
     /// <param name="spilloverPathFactory">
-    /// Given a request (mapped by job name + started timestamp via the caller),
-    /// returns an absolute path where oversized stdout should be written, or
-    /// <c>null</c> to discard the excess silently. The default factory writes
-    /// to <c>&lt;projectPath&gt;/.firepit/runs/&lt;jobName&gt;/stdout-&lt;guid&gt;.log</c>.
+    /// Given the full request, returns an absolute path where oversized stdout
+    /// should be written, or <c>null</c> to discard the excess silently. The
+    /// default factory writes to
+    /// <c>&lt;projectPath&gt;/.firepit/runs/&lt;jobName&gt;/stdout-&lt;guid&gt;.log</c>.
     /// </param>
-    public ProcessJobRunner(Func<string, string?>? spilloverPathFactory = null)
+    public ProcessJobRunner(Func<JobRunRequest, string?>? spilloverPathFactory = null)
     {
         _spilloverPathFactory = spilloverPathFactory ?? DefaultSpilloverFactory;
     }
@@ -174,7 +174,7 @@ public sealed class ProcessJobRunner : IJobRunner
 
     private string? WriteSpillover(JobRunRequest request, string inlinePortion, string overflowPortion)
     {
-        var path = _spilloverPathFactory(request.JobName);
+        var path = _spilloverPathFactory(request);
         if (path is null) return null;
         try
         {
@@ -192,12 +192,20 @@ public sealed class ProcessJobRunner : IJobRunner
         }
     }
 
-    private static string? DefaultSpilloverFactory(string jobName)
+    private static string? DefaultSpilloverFactory(JobRunRequest request)
     {
-        // The runner doesn't know the project path here — caller supplies a
-        // factory bound to it. Returning null means "discard" which is safe
-        // but loses data; production wiring must always pass a real factory.
-        return null;
+        // Caller can override for tests / alternate layouts. Production: drop
+        // the spillover next to the run's JSON record so the history UI can
+        // find both without extra plumbing.
+        var dir = Path.Combine(request.ProjectPath, ".firepit", "runs", SanitizeJobName(request.JobName));
+        return Path.Combine(dir, $"stdout-{Guid.NewGuid():N}.log");
+    }
+
+    private static string SanitizeJobName(string jobName)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var clean = string.Concat(jobName.Select(ch => Array.IndexOf(invalid, ch) >= 0 ? '_' : ch));
+        return clean.Length == 0 ? "_" : clean;
     }
 }
 

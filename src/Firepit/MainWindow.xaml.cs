@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Firepit.Adapters;
 using Firepit.Core.Agents;
 using Firepit.Core.Inbox;
+using Firepit.Core.Jobs;
 using Firepit.Core.Mcp;
 using Firepit.Core.Platform;
 using Firepit.Core.ProjectConfig;
@@ -19,6 +20,7 @@ using Firepit.Core.QuickLinks;
 using Firepit.Core.Secrets;
 using Firepit.Core.Settings;
 using Firepit.Core.State;
+using Firepit.Core.Time;
 using Firepit.Native;
 using Firepit.Process;
 using Firepit.Views;
@@ -43,6 +45,8 @@ public partial class MainWindow : Window
     private readonly IProjectConfigStore _projectConfigStore = new JsonProjectConfigStore();
     private readonly Dictionary<string, IProjectConfigWatcher> _configWatchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, InboxWatcher> _inboxWatchers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RunsWatcher> _runsWatchers = new(StringComparer.OrdinalIgnoreCase);
+    private JobScheduler? _jobScheduler;
     // Resume flag for tabs that were restored but haven't been activated yet.
     // Cleared when the deferred tab is activated for the first time.
     private readonly Dictionary<string, bool> _deferredResume = new(StringComparer.OrdinalIgnoreCase);
@@ -295,7 +299,38 @@ public partial class MainWindow : Window
             _pendingMigrationCount = 0;
         }
         MaybePromptForMetaProject();
+        StartJobScheduler();
     }
+
+    private async void StartJobScheduler()
+    {
+        try
+        {
+            var platform = _settings.Platform ?? PlatformSettings.Defaults;
+            var history = new JsonJobHistoryStore(
+                retention: TimeSpan.FromDays(Math.Max(1, platform.RunRetentionDays)),
+                log: msg => Log.Warning("JobHistory: {Message}", msg));
+            // Default spillover factory drops stdout-<guid>.log next to the
+            // run record — perfect for production. No project lookup needed.
+            var runner = new Firepit.Process.ProcessJobRunner();
+            var source = new FileSystemJobScheduleSource(
+                projectsRoot: _settings.ProjectsRoot,
+                configStore: _projectConfigStore,
+                warn: (project, message) => Log.Warning("Job source [{Project}]: {Message}", project, message));
+
+            _jobScheduler = new JobScheduler(
+                source, runner, history, new SystemActivityClock(),
+                log: msg => Log.Information("JobScheduler: {Message}", msg));
+            await _jobScheduler.StartAsync(CancellationToken.None);
+            Log.Information("Job scheduler started; root={Root}", _settings.ProjectsRoot);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to start job scheduler");
+            _jobScheduler = null;
+        }
+    }
+
 
     private void MaybePromptForMetaProject()
     {
@@ -560,6 +595,7 @@ public partial class MainWindow : Window
         _openTabs[project.Path] = (tabItem, session);
         TryAttachConfigWatcher(project.Path, session);
         TryAttachInboxWatcher(project.Path, session);
+        TryAttachRunsWatcher(project.Path, session, initialConfig);
 
         if (deferred)
         {
@@ -651,7 +687,11 @@ public partial class MainWindow : Window
         {
             var watcher = new Firepit.ProjectConfig.FileSystemProjectConfigWatcher(
                 projectPath, _projectConfigStore, Dispatcher);
-            watcher.ConfigChanged += (_, cfg) => _ = session.RefreshFromConfigAsync(cfg);
+            watcher.ConfigChanged += (_, cfg) =>
+            {
+                _ = session.RefreshFromConfigAsync(cfg);
+                _jobScheduler?.InvalidateProject(projectPath);
+            };
             watcher.Start();
             _configWatchers[projectPath] = watcher;
             Log.Information("Config watcher started for {Path}", projectPath);
@@ -698,6 +738,61 @@ public partial class MainWindow : Window
             try { watcher.Dispose(); } catch { /* ignored */ }
         }
     }
+
+    private void TryAttachRunsWatcher(string projectPath, SessionTab session,
+        Firepit.Core.ProjectConfig.ProjectConfig? initialConfig)
+    {
+        var platform = _settings.Platform ?? PlatformSettings.Defaults;
+        if (!platform.RunBadgesEnabled) return;
+        if (_runsWatchers.ContainsKey(projectPath)) return;
+
+        var policy = initialConfig?.Runs?.BadgePolicy ?? platform.RunBadgePolicy;
+
+        try
+        {
+            var watcher = new RunsWatcher(projectPath, policy);
+            watcher.UnreadCountChanged += (_, count) =>
+                Dispatcher.InvokeAsync(() => session.SetRunsBadge(count, OpenRunsOnClick(projectPath)));
+            _runsWatchers[projectPath] = watcher;
+            session.SetRunsBadge(watcher.UnreadCount, OpenRunsOnClick(projectPath));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not start runs watcher for {Path}", projectPath);
+        }
+    }
+
+    private void DisposeRunsWatcher(string projectPath)
+    {
+        if (_runsWatchers.Remove(projectPath, out var watcher))
+        {
+            try { watcher.Dispose(); } catch { /* ignored */ }
+        }
+    }
+
+    private MouseButtonEventHandler OpenRunsOnClick(string projectPath) =>
+        (_, _) =>
+        {
+            try
+            {
+                if (_runsWatchers.TryGetValue(projectPath, out var watcher))
+                {
+                    watcher.MarkAllSeen();
+                }
+                var runsPath = System.IO.Path.Combine(projectPath, ".firepit", "runs");
+                System.IO.Directory.CreateDirectory(runsPath);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{runsPath}\"",
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not open runs folder");
+            }
+        };
 
     private static MouseButtonEventHandler OpenInboxOnClick(string projectPath) =>
         (_, _) =>
@@ -804,6 +899,7 @@ public partial class MainWindow : Window
             _deferredResume.Remove(key);
             DisposeConfigWatcher(key);
             DisposeInboxWatcher(key);
+            DisposeRunsWatcher(key);
         }
 
         var index = Tabs.Items.IndexOf(tabItem);
@@ -1198,6 +1294,18 @@ public partial class MainWindow : Window
             try { watcher.Dispose(); } catch { /* ignored */ }
         }
         _inboxWatchers.Clear();
+
+        foreach (var watcher in _runsWatchers.Values)
+        {
+            try { watcher.Dispose(); } catch { /* ignored */ }
+        }
+        _runsWatchers.Clear();
+
+        if (_jobScheduler is not null)
+        {
+            try { await _jobScheduler.DisposeAsync(); } catch { /* ignored */ }
+            _jobScheduler = null;
+        }
     }
 
     public void ShowToast(string message, bool isError = false)

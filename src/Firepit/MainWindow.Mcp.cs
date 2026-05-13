@@ -101,6 +101,7 @@ public partial class MainWindow : IMcpBackend
             _openTabs.Remove(project.Path);
             DisposeConfigWatcher(project.Path);
             DisposeInboxWatcher(project.Path);
+            DisposeRunsWatcher(project.Path);
             var index = Tabs.Items.IndexOf(entry.TabItem);
             Tabs.Items.Remove(entry.TabItem);
             if (Tabs.Items.Count == 0)

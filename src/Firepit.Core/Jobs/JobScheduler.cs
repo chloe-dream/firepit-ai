@@ -63,6 +63,29 @@ public sealed class JobScheduler : IAsyncDisposable
     /// <summary>Public so the UI / MCP layer can trigger a single tick on demand.</summary>
     public Task TickOnceAsync(CancellationToken ct) => RunOneTickAsync(ct);
 
+    /// <summary>
+    /// Drop in-memory state for every job under <paramref name="projectPath"/>.
+    /// Called by the host's config-watcher when a project's
+    /// <c>.firepit/config.json</c> changes — renamed or deleted jobs would
+    /// otherwise leave stale <c>LastFiredUtc</c> entries in our dict, which
+    /// is wasted memory and (more importantly) means a removed-then-re-added
+    /// job would skip its first fire.
+    /// </summary>
+    public void InvalidateProject(string projectPath)
+    {
+        if (string.IsNullOrEmpty(projectPath)) return;
+        var prefix = projectPath.ToLowerInvariant() + "||";
+        var stale  = _states.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        foreach (var key in stale)
+        {
+            _states.TryRemove(key, out _);
+        }
+        if (stale.Count > 0)
+        {
+            _log?.Invoke($"InvalidateProject {projectPath}: cleared {stale.Count} job state(s)");
+        }
+    }
+
     public async Task StartAsync(CancellationToken ct)
     {
         if (_started) throw new InvalidOperationException("scheduler already started");
@@ -191,7 +214,7 @@ public sealed class JobScheduler : IAsyncDisposable
             {
                 var outcome = await _runner.RunAsync(request, cts.Token).ConfigureAwait(false);
                 await _history.RecordAsync(entry.ProjectPath, entry.ProjectName, entry.Job.Name,
-                    trigger, outcome, CancellationToken.None).ConfigureAwait(false);
+                    entry.Job.Prompt, trigger, outcome, CancellationToken.None).ConfigureAwait(false);
 
                 // Drain the queue under the gate. Cleared first so a fresh
                 // dispatch doesn't see RunningTask still-active from this run.
@@ -334,7 +357,7 @@ public sealed class JobScheduler : IAsyncDisposable
             StdoutSpilloverPath: null,
             Stderr: "previous run still active");
         await _history.RecordAsync(entry.ProjectPath, entry.ProjectName, entry.Job.Name,
-            trigger, outcome, ct).ConfigureAwait(false);
+            entry.Job.Prompt, trigger, outcome, ct).ConfigureAwait(false);
     }
 
     private static JobRunRequest BuildRequest(JobScheduleEntry entry, JobTrigger trigger) => new(

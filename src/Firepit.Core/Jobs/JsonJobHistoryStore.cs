@@ -35,12 +35,12 @@ public sealed class JsonJobHistoryStore : IJobHistoryStore
     }
 
     public Task RecordAsync(string projectPath, string projectName, string jobName,
-        JobTrigger trigger, JobRunOutcome outcome, CancellationToken ct)
+        string prompt, JobTrigger trigger, JobRunOutcome outcome, CancellationToken ct)
     {
         var jobDir = Path.Combine(projectPath, ".firepit", RunsDirectory, SanitizeJobName(jobName));
         Directory.CreateDirectory(jobDir);
 
-        var record = ToRecord(jobName, projectName, trigger, outcome);
+        var record = ToRecord(jobName, projectName, prompt, trigger, outcome);
         var fileName = FormatFileName(outcome.StartedAt);
         var finalPath = Path.Combine(jobDir, fileName);
         var tempPath  = finalPath + ".tmp";
@@ -176,7 +176,7 @@ public sealed class JsonJobHistoryStore : IJobHistoryStore
         }
     }
 
-    private static JobRunRecord ToRecord(string jobName, string projectName,
+    private static JobRunRecord ToRecord(string jobName, string projectName, string prompt,
         JobTrigger trigger, JobRunOutcome outcome) => new(
         Version:             JobRunRecord.CurrentVersion,
         JobName:             jobName,
@@ -187,7 +187,7 @@ public sealed class JsonJobHistoryStore : IJobHistoryStore
         EndedAt:             outcome.EndedAt,
         DurationMs:          (long)outcome.Duration.TotalMilliseconds,
         ExitCode:            outcome.ExitCode,
-        Prompt:              "", // filled by scheduler — we don't have it here
+        Prompt:              prompt,
         CommandLine:         outcome.CommandLine,
         StdoutInline:        outcome.StdoutInline,
         StdoutTruncated:     outcome.StdoutTruncated,

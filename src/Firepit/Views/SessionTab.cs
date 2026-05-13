@@ -43,6 +43,8 @@ public sealed class SessionTab : IAsyncDisposable
     private readonly StackPanel _headerPanel;
     private readonly Border _inboxBadge;
     private readonly TextBlock _inboxBadgeCount;
+    private readonly Border _runsBadge;
+    private readonly TextBlock _runsBadgeCount;
     private readonly TabToolbar _toolbar;
     private readonly Border _rekindleAffordance;
     private readonly Border _configRestartAffordance;
@@ -167,6 +169,31 @@ public sealed class SessionTab : IAsyncDisposable
             Child = _inboxBadgeCount,
         };
 
+        // Runs badge sits next to the inbox badge. Different colour so the two
+        // are distinguishable at a glance — embers-warm for runs, igniting-warm
+        // for inbox. Tooltip explains which is which. Hidden when count is zero.
+        _runsBadgeCount = new TextBlock
+        {
+            Text = "0",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x11, 0x0D)),
+            FontFamily = new FontFamily("Cascadia Code, Consolas, Courier New"),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _runsBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0xC9, 0x9A, 0x5C)),
+            CornerRadius = new CornerRadius(7),
+            Padding = new Thickness(5, 1, 5, 1),
+            Margin = new Thickness(4, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Cursor = Cursors.Hand,
+            ToolTip = "Scheduled job runs — click to open runs folder",
+            Child = _runsBadgeCount,
+        };
+
         _headerPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -174,6 +201,7 @@ public sealed class SessionTab : IAsyncDisposable
         };
         _headerPanel.Children.Add(_headerText);
         _headerPanel.Children.Add(_inboxBadge);
+        _headerPanel.Children.Add(_runsBadge);
 
         _tickTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -206,6 +234,28 @@ public sealed class SessionTab : IAsyncDisposable
         {
             _inboxBadge.MouseLeftButtonUp -= onClick;  // dedup before re-attach
             _inboxBadge.MouseLeftButtonUp += onClick;
+        }
+    }
+
+    /// <summary>
+    /// Update the scheduled-job runs badge. Counts depend on the effective
+    /// <see cref="RunBadgePolicy"/> wired up by MainWindow. Set unreadCount=0
+    /// to hide.
+    /// </summary>
+    public void SetRunsBadge(int unreadCount, MouseButtonEventHandler? onClick = null)
+    {
+        if (_disposed) return;
+        if (unreadCount <= 0)
+        {
+            _runsBadge.Visibility = Visibility.Collapsed;
+            return;
+        }
+        _runsBadgeCount.Text = unreadCount > 99 ? "99+" : unreadCount.ToString();
+        _runsBadge.Visibility = Visibility.Visible;
+        if (onClick is not null)
+        {
+            _runsBadge.MouseLeftButtonUp -= onClick;  // dedup before re-attach
+            _runsBadge.MouseLeftButtonUp += onClick;
         }
     }
 
