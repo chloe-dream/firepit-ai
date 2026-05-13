@@ -5,6 +5,17 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.8] — 2026-05-13
+
+### Fixed
+
+- **Drag-and-drop files onto the terminal pastes the path** instead of
+  opening the file in the embedded Edge layer's preview. Single files,
+  multiple files, and folders are all supported; paths with whitespace
+  are automatically double-quoted. Matches the Windows Terminal
+  convention — useful for sharing images/files with `@<path>` references
+  in Claude Code or any agent CLI.
+
 ## [0.5.7] — 2026-05-13
 
 ### Added

@@ -1,6 +1,8 @@
 using System.IO;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Text.Json;
+using System.Windows;
 using Firepit.Core.Settings;
 using Firepit.Core.Terminal;
 using Microsoft.Web.WebView2.Core;
@@ -72,6 +74,16 @@ public sealed class WebView2TerminalView : ITerminalView
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             _webView.CoreWebView2.Settings.AreDevToolsEnabled = true; // V1 diagnostic — flip back later
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+
+            // Disable the browser layer's own drag-and-drop so dropped files
+            // don't navigate (Edge would otherwise open images in preview).
+            // With AllowExternalDrop=false, the drop event bubbles up to the
+            // WPF host and our handler pastes the file path into the PTY.
+            _webView.AllowExternalDrop = false;
+            _webView.AllowDrop         = true;
+            _webView.DragEnter         += OnDragEnterOrOver;
+            _webView.DragOver          += OnDragEnterOrOver;
+            _webView.Drop              += OnFilesDropped;
 
             _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
             _webView.CoreWebView2.NavigationCompleted += (_, args) =>
@@ -213,12 +225,73 @@ public sealed class WebView2TerminalView : ITerminalView
             Log.Debug(ex, "WV2 paste-request: clipboard read failed");
             return;
         }
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
+        PasteText(text);
+    }
+
+    private void PasteText(string text)
+    {
+        if (string.IsNullOrEmpty(text) || _disposed) return;
         var payload = $"{{\"type\":\"paste\",\"text\":{JsonSerializer.Serialize(text)}}}";
-        _webView.CoreWebView2.PostWebMessageAsString(payload);
+        try { _webView.CoreWebView2.PostWebMessageAsString(payload); }
+        catch (Exception ex) { Log.Debug(ex, "WV2 paste-text: post failed"); }
+    }
+
+    private static void OnDragEnterOrOver(object sender, DragEventArgs e)
+    {
+        // Accept only file drops — text drops fall through to the browser's
+        // own selection behaviour (irrelevant here since the terminal is
+        // canvas-based, but keep the contract minimal).
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnFilesDropped(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+
+        var paths = e.Data.GetData(DataFormats.FileDrop) as string[];
+        if (paths is null || paths.Length == 0) return;
+
+        var formatted = FormatDroppedPaths(paths);
+        Log.Information("WV2 drop: {Count} path(s) pasted", paths.Length);
+        PasteText(formatted);
+    }
+
+    /// <summary>
+    /// Format file paths for paste into the terminal. One path → bare or
+    /// double-quoted if it contains whitespace. Multiple paths → space-
+    /// separated, each quoted individually if needed. Matches Windows
+    /// Terminal's drag-drop convention.
+    /// </summary>
+    internal static string FormatDroppedPaths(IReadOnlyList<string> paths)
+    {
+        var sb = new StringBuilder();
+        for (int i = 0; i < paths.Count; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            var p = paths[i];
+            if (NeedsQuoting(p))
+            {
+                sb.Append('"').Append(p).Append('"');
+            }
+            else
+            {
+                sb.Append(p);
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static bool NeedsQuoting(string path)
+    {
+        foreach (var c in path)
+        {
+            if (char.IsWhiteSpace(c)) return true;
+        }
+        return false;
     }
 
     private static void HandleCopy(string? text)
