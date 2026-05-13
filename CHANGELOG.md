@@ -5,6 +5,38 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.7] — 2026-05-13
+
+### Added
+
+- **Scheduled jobs.** Per-project `.firepit/config.json` gains a
+  `scheduledJobs` array — each job pairs a slash-command prompt with a
+  cron expression and timezone. A headless runner spawns `claude -p` in the
+  project directory, captures stdout/stderr, and writes a JSON record per
+  run under `.firepit/runs/<job>/`. Failures, timeouts, and Claude's own
+  usage metadata are surfaced in each record. Scheduler honours per-project
+  overrides for retention, badge policy, and concurrency, and falls back to
+  the platform defaults in `settings.json`.
+- **Run-result badges on tabs.** A second amber pill next to the inbox
+  badge shows how many run records have arrived since the user last opened
+  the runs folder. Policy is `All` or `FailuresOnly` (configurable per
+  project). Clicking the badge opens the runs folder in Explorer and marks
+  everything as seen. Disabled globally via
+  `platform.runBadgesEnabled = false`.
+- **Hot-reload for job schedules.** Editing `scheduledJobs` in a project's
+  config file invalidates only that project's scheduler state — no full
+  restart, no cross-project disruption. Same FileSystemWatcher path that
+  already powers quick-link reload.
+
+### Changed
+
+- **Spillover paths for oversized stdout** now default to a project-local
+  `.firepit/runs/<job>/stdout-<guid>.log` so the history UI can read the
+  full output without extra plumbing. The factory signature gained the full
+  `JobRunRequest` so callers can override per project.
+
+## [0.5.6] — 2026-05-13
+
 ### Added
 
 - **`Ctrl+PgDn` / `Ctrl+PgUp` cycle tabs** as browser-style alternates to
