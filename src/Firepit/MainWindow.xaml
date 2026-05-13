@@ -17,7 +17,7 @@
             CaptionHeight="36"
             CornerRadius="0"
             GlassFrameThickness="0"
-            ResizeBorderThickness="6"
+            ResizeBorderThickness="10"
             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
     <!-- Keyboard shortcuts are registered in code-behind
@@ -212,6 +212,21 @@
             <ContentControl x:Name="TabContentHost"
                             Background="#1A1612"
                             Visibility="Collapsed" />
+
+            <!-- Bottom-right resize grip. Sits transparent over whatever the
+                 body shows (incl. the WebView2 HwndHost) but WindowChrome
+                 routes WM_NCHITTEST for this rect to HTBOTTOMRIGHT before any
+                 child window sees the message, so resize works through the
+                 airspace and the cursor flips to the diagonal arrow when
+                 hovering. 22 px extends the corner hit zone well past the
+                 10 px ResizeBorderThickness for a much more forgiving grab. -->
+            <Rectangle x:Name="BottomRightResizeGrip"
+                       Width="22" Height="22"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"
+                       Fill="Transparent"
+                       Panel.ZIndex="999"
+                       shell:WindowChrome.ResizeGripDirection="BottomRight" />
         </Grid>
 
         <!-- Project picker popup -->

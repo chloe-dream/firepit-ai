@@ -5,6 +5,18 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.9] — 2026-05-13
+
+### Fixed
+
+- **Window resize is no longer fiddly.** The chrome's resize border grew
+  from 6 px to 10 px on every edge, and the bottom-right corner gets an
+  extra 22 px diagonal grip on top of that. Grabbing the corner to resize
+  now lands first-try instead of requiring pixel-perfect aim. The corner
+  grip overlays the embedded WebView2 — `WindowChrome` intercepts
+  `WM_NCHITTEST` before any child window sees the click, so the resize
+  also works over the terminal area.
+
 ## [0.5.8] — 2026-05-13
 
 ### Fixed
