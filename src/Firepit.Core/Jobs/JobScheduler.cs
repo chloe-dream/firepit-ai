@@ -55,8 +55,10 @@ public sealed class JobScheduler : IAsyncDisposable
         _startedAtUtc = clock.UtcNow;
     }
 
+    private int _runsObserved;
+
     /// <summary>Total runs fired (including skipped) since startup. Test hook.</summary>
-    public int RunsObserved { get; private set; }
+    public int RunsObserved => Volatile.Read(ref _runsObserved);
 
     /// <summary>Public so the UI / MCP layer can trigger a single tick on demand.</summary>
     public Task TickOnceAsync(CancellationToken ct) => RunOneTickAsync(ct);
@@ -128,15 +130,26 @@ public sealed class JobScheduler : IAsyncDisposable
             var due    = CronEvaluator.NextOccurrence(schedule, anchor, entry.Timezone);
             if (due is null || due > now) continue;
 
-            if (state.RunningTask is { IsCompleted: false })
+            // Serialize the check-and-decide section per job. Without this,
+            // TickOnce + the background tick loop + TriggerNowAsync can race
+            // on RunningTask / QueuedTrigger and either double-fire or lose
+            // updates. The actual run still runs outside the gate.
+            var shouldFire = false;
+            await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                var policy = entry.Job.OnConcurrent ?? JobConcurrencyPolicy.Skip;
-                await HandleConcurrencyAsync(entry, state, due.Value, policy, ct).ConfigureAwait(false);
-                continue;
+                if (state.RunningTask is { IsCompleted: false })
+                {
+                    var policy = entry.Job.OnConcurrent ?? JobConcurrencyPolicy.Skip;
+                    await HandleConcurrencyAsync(entry, state, due.Value, policy, ct).ConfigureAwait(false);
+                    continue;
+                }
+                state.LastFiredUtc = due.Value;
+                shouldFire = true;
             }
+            finally { state.Gate.Release(); }
 
-            state.LastFiredUtc = due.Value;
-            dispatches.Add(DispatchAsync(entry, JobTrigger.Scheduled, ct));
+            if (shouldFire) dispatches.Add(DispatchAsync(entry, JobTrigger.Scheduled, ct));
         }
 
         // Don't block the tick on the actual runs — they may take minutes.
@@ -151,23 +164,28 @@ public sealed class JobScheduler : IAsyncDisposable
     {
         var state = _states.GetOrAdd(KeyOf(entry), _ => new JobState());
 
-        // Concurrency gate for manual triggers too — caller shouldn't race two
-        // TriggerNowAsync calls for the same job.
-        if (state.RunningTask is { IsCompleted: false } && trigger != JobTrigger.Scheduled)
+        // Same gate as the tick: serialize concurrency-policy decisions and
+        // RunningTask assignment. The actual run executes outside the gate.
+        CancellationTokenSource cts;
+        await state.Gate.WaitAsync(outerCt).ConfigureAwait(false);
+        try
         {
-            await HandleConcurrencyAsync(entry, state, _clock.UtcNow,
-                entry.Job.OnConcurrent ?? JobConcurrencyPolicy.Skip, outerCt).ConfigureAwait(false);
-            return;
+            if (state.RunningTask is { IsCompleted: false } && trigger != JobTrigger.Scheduled)
+            {
+                await HandleConcurrencyAsync(entry, state, _clock.UtcNow,
+                    entry.Job.OnConcurrent ?? JobConcurrencyPolicy.Skip, outerCt).ConfigureAwait(false);
+                return;
+            }
+
+            state.LastFiredUtc ??= _clock.UtcNow;
+            cts = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
+            state.RunningCts = cts;
         }
-
-        state.LastFiredUtc ??= _clock.UtcNow;
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
-        state.RunningCts = cts;
+        finally { state.Gate.Release(); }
 
         var task = Task.Run(async () =>
         {
-            RunsObserved++;
+            Interlocked.Increment(ref _runsObserved);
             var request = BuildRequest(entry, trigger);
             try
             {
@@ -175,21 +193,43 @@ public sealed class JobScheduler : IAsyncDisposable
                 await _history.RecordAsync(entry.ProjectPath, entry.ProjectName, entry.Job.Name,
                     trigger, outcome, CancellationToken.None).ConfigureAwait(false);
 
-                // If a tick queued a follow-up run, fire it now.
-                if (state.QueuedTrigger is JobTrigger queued)
+                // Drain the queue under the gate. Cleared first so a fresh
+                // dispatch doesn't see RunningTask still-active from this run.
+                JobTrigger? toDispatch = null;
+                await state.Gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
                 {
-                    state.QueuedTrigger = null;
-                    _ = DispatchAsync(entry, queued, outerCt);
+                    if (state.QueuedTrigger is JobTrigger queued)
+                    {
+                        state.QueuedTrigger = null;
+                        state.QueueDepth = Math.Max(0, state.QueueDepth - 1);
+                        toDispatch = queued;
+                    }
+                    // Mark complete so the next tick's RunningTask check fails.
+                    state.RunningTask = null;
+                    state.RunningCts = null;
+                }
+                finally { state.Gate.Release(); }
+
+                if (toDispatch is JobTrigger t)
+                {
+                    _ = Task.Run(() => DispatchAsync(entry, t, outerCt), CancellationToken.None);
                 }
             }
             catch (Exception ex)
             {
                 _log?.Invoke($"job '{entry.Job.Name}' run threw: {ex.Message}");
+                // Make sure we don't leave RunningTask non-null on uncaught errors.
+                await state.Gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try { state.RunningTask = null; state.RunningCts = null; }
+                finally { state.Gate.Release(); }
             }
         }, CancellationToken.None);
 
-        state.RunningTask = task;
-        await Task.Yield(); // ensure caller doesn't block waiting for the long-running task
+        await state.Gate.WaitAsync(outerCt).ConfigureAwait(false);
+        try { state.RunningTask = task; }
+        finally { state.Gate.Release(); }
+        await Task.Yield();
     }
 
     private async Task HandleConcurrencyAsync(
@@ -330,6 +370,7 @@ public sealed class JobScheduler : IAsyncDisposable
 
     private sealed class JobState
     {
+        public readonly SemaphoreSlim Gate = new(initialCount: 1, maxCount: 1);
         public DateTimeOffset? LastFiredUtc;
         public Task? RunningTask;
         public CancellationTokenSource? RunningCts;

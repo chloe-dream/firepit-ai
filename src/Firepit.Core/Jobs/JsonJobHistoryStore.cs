@@ -200,21 +200,36 @@ public sealed class JsonJobHistoryStore : IJobHistoryStore
         AssistantMessage:    outcome.ClaudeMetadata?.AssistantMessage);
 
     /// <summary>
-    /// "2026-05-13T08:30:00Z" → "2026-05-13T08-30-00Z.json" (colons are illegal
-    /// in Windows file names; dashes restore Path.GetFileName parsing).
+    /// "2026-05-13T08:30:00.123Z" → "2026-05-13T08-30-00-123Z.json".
+    /// Millisecond precision in the filename prevents collisions when two runs
+    /// share the same second — e.g. a kill-and-restart cycle or a manual
+    /// trigger that lands during a scheduled fire. Sortable as a string =
+    /// chronological order, same as before.
     /// </summary>
     public static string FormatFileName(DateTimeOffset startedAt) =>
-        startedAt.UtcDateTime.ToString("yyyy-MM-ddTHH-mm-ssZ", System.Globalization.CultureInfo.InvariantCulture) + ".json";
+        startedAt.UtcDateTime.ToString("yyyy-MM-ddTHH-mm-ss-fffZ",
+            System.Globalization.CultureInfo.InvariantCulture) + ".json";
 
     public static DateTimeOffset? TryParseFileName(string fileName)
     {
         var ts = Path.GetFileNameWithoutExtension(fileName);
+
+        // Current format with milliseconds.
+        if (DateTime.TryParseExact(ts, "yyyy-MM-ddTHH-mm-ss-fffZ",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var withMs))
+        {
+            return new DateTimeOffset(withMs, TimeSpan.Zero);
+        }
+
+        // Backwards-compat: records written by pre-fix builds used second precision.
         if (DateTime.TryParseExact(ts, "yyyy-MM-ddTHH-mm-ssZ",
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                out var parsed))
+                out var legacy))
         {
-            return new DateTimeOffset(parsed, TimeSpan.Zero);
+            return new DateTimeOffset(legacy, TimeSpan.Zero);
         }
         return null;
     }

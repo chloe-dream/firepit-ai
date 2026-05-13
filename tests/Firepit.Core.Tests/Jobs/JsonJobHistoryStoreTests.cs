@@ -44,7 +44,7 @@ public class JsonJobHistoryStoreTests : IDisposable
         var dir = Path.Combine(_projectPath, ".firepit", "runs", "check-mails");
         var files = Directory.GetFiles(dir, "*.json");
         Assert.Single(files);
-        Assert.EndsWith("2026-05-13T08-30-00Z.json", files[0]);
+        Assert.EndsWith("2026-05-13T08-30-00-000Z.json", files[0]);
     }
 
     [Fact]
@@ -148,11 +148,36 @@ public class JsonJobHistoryStoreTests : IDisposable
     }
 
     [Fact]
-    public void FileNameRoundtrip()
+    public void FileNameRoundtrip_MillisecondPrecision()
     {
-        var ts = new DateTimeOffset(2026, 5, 13, 8, 30, 0, TimeSpan.Zero);
+        var ts = new DateTimeOffset(2026, 5, 13, 8, 30, 0, 123, TimeSpan.Zero);
         var name = JsonJobHistoryStore.FormatFileName(ts);
-        Assert.Equal("2026-05-13T08-30-00Z.json", name);
+        Assert.Equal("2026-05-13T08-30-00-123Z.json", name);
         Assert.Equal(ts, JsonJobHistoryStore.TryParseFileName(name));
+    }
+
+    [Fact]
+    public void FileNameRoundtrip_LegacySecondPrecisionStillParses()
+    {
+        var legacyName = "2026-05-13T08-30-00Z.json";
+        var parsed = JsonJobHistoryStore.TryParseFileName(legacyName);
+        Assert.Equal(new DateTimeOffset(2026, 5, 13, 8, 30, 0, TimeSpan.Zero), parsed);
+    }
+
+    [Fact]
+    public async Task SameSecondRuns_DoNotCollide()
+    {
+        var store = new JsonJobHistoryStore();
+        var ts = new DateTimeOffset(2026, 5, 13, 8, 30, 0, TimeSpan.Zero);
+
+        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Scheduled,
+            MakeOutcome(startedAt: ts.AddMilliseconds(100), endedAt: ts.AddSeconds(1)),
+            CancellationToken.None);
+        await store.RecordAsync(_projectPath, "demo", "check-mails", JobTrigger.Manual,
+            MakeOutcome(startedAt: ts.AddMilliseconds(750), endedAt: ts.AddSeconds(1).AddMilliseconds(750)),
+            CancellationToken.None);
+
+        var dir = Path.Combine(_projectPath, ".firepit", "runs", "check-mails");
+        Assert.Equal(2, Directory.GetFiles(dir, "*.json").Length);
     }
 }

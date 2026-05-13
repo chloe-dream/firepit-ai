@@ -10,6 +10,17 @@ namespace Firepit.Core.Jobs;
 /// All wall-clock arithmetic happens in the supplied timezone (default: local);
 /// only the returned <see cref="DateTimeOffset"/> values are in UTC. This keeps
 /// "every Monday at 08:00 Europe/Berlin" semantics intact across DST transitions.
+///
+/// DST notes:
+/// <list type="bullet">
+///   <item>Spring-forward (skipped local hour): if a schedule lands inside the
+///         gap, we advance one minute and try again until we land in valid
+///         local time. The fire happens at the next legal instant.</item>
+///   <item>Fall-back (repeated local hour): the schedule fires once — at the
+///         first occurrence of the repeated local time, never the second.
+///         This matches Linux cron's "no double-fire" behaviour and is the
+///         right choice for jobs that mutate state.</item>
+/// </list>
 /// </summary>
 public static class CronEvaluator
 {

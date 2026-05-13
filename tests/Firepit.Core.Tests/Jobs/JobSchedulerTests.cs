@@ -226,6 +226,29 @@ public class JobSchedulerTests
     }
 
     [Fact]
+    public async Task ParallelManualTriggers_OnlyOneRuns()
+    {
+        // Two TriggerNowAsync calls fired concurrently must not produce two
+        // overlapping runs — the second sees RunningTask alive and yields to
+        // concurrency policy (default Skip).
+        var clock = new FakeClock { UtcNow = new DateTimeOffset(2026, 5, 13, 9, 0, 0, TimeSpan.Zero) };
+        var runner = new FakeRunner { Gate = new TaskCompletionSource() };
+        var history = new FakeHistory();
+        var source = new StaticSource { Entries = { Entry("slow", "0 0 1 1 *") } };
+
+        await using var sched = new JobScheduler(source, runner, history, clock);
+
+        var t1 = sched.TriggerNowAsync(@"C:\projects\demo", "slow", CancellationToken.None);
+        var t2 = sched.TriggerNowAsync(@"C:\projects\demo", "slow", CancellationToken.None);
+        await Task.WhenAll(t1, t2);
+        await Task.Delay(50);
+
+        Assert.Single(runner.Invocations);
+        runner.Gate!.SetResult();
+        await Task.Delay(50);
+    }
+
+    [Fact]
     public async Task Start_InvokesInterruptedRecoveryOncePerProject()
     {
         var clock = new FakeClock();
