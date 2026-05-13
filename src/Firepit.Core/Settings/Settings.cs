@@ -38,9 +38,27 @@ public sealed record FirepitSettings(
 /// </summary>
 public sealed record PlatformSettings(
     bool MetaProjectPromptShown = false,
-    bool InboxBadgesEnabled = true)
+    bool InboxBadgesEnabled = true,
+    bool RunBadgesEnabled = true,
+    RunBadgePolicy RunBadgePolicy = RunBadgePolicy.All,
+    int RunRetentionDays = 30)
 {
     public static readonly PlatformSettings Defaults = new();
+}
+
+/// <summary>
+/// What the runs badge on a tab counts. Global default in <see cref="PlatformSettings.RunBadgePolicy"/>,
+/// optionally overridden per-project via <c>.firepit/config.json</c> →
+/// <c>runs.badgePolicy</c>.
+/// <list type="bullet">
+///   <item><c>All</c> — every run since last viewed (default)</item>
+///   <item><c>FailuresOnly</c> — only failure/timeout runs surface as badge</item>
+/// </list>
+/// </summary>
+public enum RunBadgePolicy
+{
+    [System.Text.Json.Serialization.JsonStringEnumMemberName("all")]          All,
+    [System.Text.Json.Serialization.JsonStringEnumMemberName("failuresOnly")] FailuresOnly,
 }
 
 /// <summary>

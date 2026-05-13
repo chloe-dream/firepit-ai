@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Firepit.Core.Settings;
 
 namespace Firepit.Core.ProjectConfig;
@@ -20,7 +21,9 @@ public sealed record ProjectConfig(
     IReadOnlyList<ProjectMcpActivation>? McpActivations = null,
     ProjectAgentConfig? Agent = null,
     ProjectSessionConfig? Session = null,
-    IReadOnlyList<ProjectCommand>? Commands = null);
+    IReadOnlyList<ProjectCommand>? Commands = null,
+    IReadOnlyList<ProjectScheduledJob>? ScheduledJobs = null,
+    ProjectRunsConfig? Runs = null);
 
 /// <summary>
 /// User-defined toolbar buttons. Three variants:
@@ -68,3 +71,49 @@ public sealed record ProjectAgentConfig(
 
 public sealed record ProjectSessionConfig(
     IReadOnlyDictionary<string, string?>? EnvOverrides = null);
+
+/// <summary>
+/// A scheduled headless Claude run. Fires on its cron schedule, spawns
+/// <c>claude -p "&lt;prompt&gt;" --output-format json</c> in the project dir,
+/// captures stdout/stderr, persists a run record under
+/// <c>.firepit/runs/&lt;name&gt;/&lt;utc&gt;.json</c>. Auth comes from the user's
+/// existing <c>~/.claude/</c> credentials — Firepit injects no API key.
+///
+/// Jobs run only while Firepit is open. Catch-up on launch fires the
+/// last missed occurrence (not the full backlog).
+/// </summary>
+public sealed record ProjectScheduledJob(
+    string Name,
+    string Prompt,
+    string Schedule,
+    bool? Enabled = null,
+    int? TimeoutSeconds = null,
+    IReadOnlyList<string>? AllowedTools = null,
+    int? MaxTurns = null,
+    decimal? MaxBudgetUsd = null,
+    bool? SkipPermissions = null,
+    string? Timezone = null,
+    JobConcurrencyPolicy? OnConcurrent = null,
+    JobNotifyPolicy? Notify = null);
+
+public enum JobConcurrencyPolicy
+{
+    [JsonStringEnumMemberName("skip")]           Skip,
+    [JsonStringEnumMemberName("queue")]          Queue,
+    [JsonStringEnumMemberName("killAndRestart")] KillAndRestart,
+}
+
+public enum JobNotifyPolicy
+{
+    [JsonStringEnumMemberName("always")]   Always,
+    [JsonStringEnumMemberName("onChange")] OnChange,
+    [JsonStringEnumMemberName("never")]    Never,
+}
+
+/// <summary>
+/// Per-project overrides for the runs feature. Null fields inherit from
+/// <see cref="Firepit.Core.Settings.PlatformSettings"/>.
+/// </summary>
+public sealed record ProjectRunsConfig(
+    RunBadgePolicy? BadgePolicy = null,
+    int? RetentionDays = null);

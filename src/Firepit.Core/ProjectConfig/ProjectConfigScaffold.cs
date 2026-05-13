@@ -83,7 +83,38 @@ public static class ProjectConfigScaffold
   //   { "name": "Tests",   "type": "shell",         "command": "pwsh", "args": ["-c", "dotnet test"] },
   //   { "name": "Refactor","type": "claude-prompt", "prompt": "Look for code smells in src/ and propose fixes." },
   //   { "name": "Issues",  "type": "url",           "url": "https://github.com/<you>/{projectName}/issues" }
-  // ]
+  // ],
+
+  // Scheduled headless Claude runs. Each entry fires on its cron schedule
+  // and spawns `claude -p "<prompt>" --output-format json` in this project's
+  // directory. Output lands under .firepit/runs/<name>/<utc>.json and shows
+  // up as a tab badge.
+  //   name              — unique within this project
+  //   prompt            — what gets passed to `claude -p` (slash-commands work)
+  //   schedule          — standard 5-field cron expression
+  //   enabled           — toggle without deleting (default true)
+  //   timeoutSeconds    — kill after N seconds (default 300)
+  //   timezone          — IANA tz name (default = local)
+  //   onConcurrent      — skip | queue | killAndRestart (default skip)
+  //   notify            — always | onChange | never (default onChange)
+  //                       controls cross-Claude inbox messaging
+  //   allowedTools      — passed through as --allowedTools
+  //   maxTurns          — passed through as --max-turns
+  //   maxBudgetUsd      — passed through as --max-budget-usd
+  //   skipPermissions   — --dangerously-skip-permissions (default false)
+  // "scheduledJobs": [
+  //   { "name": "check-mails", "prompt": "/check-mails",
+  //     "schedule": "*/30 * * * *", "notify": "onChange" },
+  //   { "name": "weekly-review", "prompt": "/weekly-review",
+  //     "schedule": "0 8 * * 1", "timeoutSeconds": 900 }
+  // ],
+
+  // Per-project overrides for the runs feature. Null → inherit from
+  // global settings.platform.
+  // "runs": {
+  //   "badgePolicy": "all",         // "all" | "failuresOnly"
+  //   "retentionDays": 30
+  // }
 }
 """;
 }
