@@ -5,6 +5,22 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.13] — 2026-05-14
+
+### Fixed
+
+- **Drag-and-drop of files onto the terminal actually works now.** v0.5.8
+  wired WPF `DragEnter` / `Drop` handlers onto the WebView2 — but the
+  WebView2 is an `HwndHost`, and WPF's managed drag-drop never fires over
+  that airspace, so dropping a file just showed the "no-drop" cursor.
+  Replaced with a native OLE `IDropTarget` registered via
+  `RegisterDragDrop` directly on the WebView2 host HWND. It reads the full
+  paths from the `CF_HDROP` payload (which the HTML5 `drop` event can't
+  expose) and pastes them into the terminal — single bare path, or
+  multiple whitespace-quoted paths, as before. (Approach confirmed against
+  a second opinion — this is the pattern production WebView2 apps use for
+  native file paths.)
+
 ## [0.5.12] — 2026-05-14
 
 ### Added

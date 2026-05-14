@@ -2,7 +2,6 @@ using System.IO;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
-using System.Windows;
 using Firepit.Core.Settings;
 using Firepit.Core.Terminal;
 using Microsoft.Web.WebView2.Core;
@@ -28,6 +27,12 @@ public sealed class WebView2TerminalView : ITerminalView
     private readonly int _fontSize;
     private bool _initialized;
     private bool _disposed;
+
+    // Native OLE drop target registered on the WebView2 host HWND. Kept alive
+    // by this field so the CCW isn't collected while OLE holds it; the HWND is
+    // remembered separately so Dispose can RevokeDragDrop even after teardown.
+    private FileDropTarget? _fileDropTarget;
+    private IntPtr _dropTargetHwnd;
 
     public WebView2TerminalView(TerminalThemeSettings? theme = null, int fontSize = 14)
     {
@@ -75,15 +80,14 @@ public sealed class WebView2TerminalView : ITerminalView
             _webView.CoreWebView2.Settings.AreDevToolsEnabled = true; // V1 diagnostic — flip back later
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
-            // Disable the browser layer's own drag-and-drop so dropped files
-            // don't navigate (Edge would otherwise open images in preview).
-            // With AllowExternalDrop=false, the drop event bubbles up to the
-            // WPF host and our handler pastes the file path into the PTY.
+            // Turn off the browser layer's own drag-and-drop: it would
+            // navigate to dropped files (Edge opens images in a preview) and
+            // it registers a Chromium drop target on the inner HWNDs. With it
+            // off, Firepit registers its own native IDropTarget on the host
+            // HWND once init finishes — see RegisterFileDropTarget(). WPF's
+            // managed drag-drop events can't be used: the WebView2 is an
+            // HwndHost and its airspace is invisible to WPF hit-testing.
             _webView.AllowExternalDrop = false;
-            _webView.AllowDrop         = true;
-            _webView.DragEnter         += OnDragEnterOrOver;
-            _webView.DragOver          += OnDragEnterOrOver;
-            _webView.Drop              += OnFilesDropped;
 
             _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
             _webView.CoreWebView2.NavigationCompleted += (_, args) =>
@@ -109,6 +113,7 @@ public sealed class WebView2TerminalView : ITerminalView
             }
             ApplyTheme();
             ApplyFontSize();
+            RegisterFileDropTarget();
             _initialized = true;
         }
         finally
@@ -196,6 +201,14 @@ public sealed class WebView2TerminalView : ITerminalView
         }
         _disposed = true;
 
+        if (_dropTargetHwnd != IntPtr.Zero)
+        {
+            try { NativeDragDrop.RevokeDragDrop(_dropTargetHwnd); }
+            catch (Exception ex) { Log.Debug(ex, "WV2 drop: RevokeDragDrop failed"); }
+            _dropTargetHwnd = IntPtr.Zero;
+            _fileDropTarget = null;
+        }
+
         try
         {
             if (_webView.CoreWebView2 is { } core)
@@ -236,27 +249,41 @@ public sealed class WebView2TerminalView : ITerminalView
         catch (Exception ex) { Log.Debug(ex, "WV2 paste-text: post failed"); }
     }
 
-    private static void OnDragEnterOrOver(object sender, DragEventArgs e)
+    /// <summary>
+    /// Register a native OLE drop target on the WebView2 host HWND. WPF's
+    /// managed drag-drop never fires over the HwndHost airspace, and with
+    /// <c>AllowExternalDrop = false</c> the browser registers no target of its
+    /// own — so without this, dropping a file just shows the "no-drop" cursor.
+    /// </summary>
+    private void RegisterFileDropTarget()
     {
-        // Accept only file drops — text drops fall through to the browser's
-        // own selection behaviour (irrelevant here since the terminal is
-        // canvas-based, but keep the contract minimal).
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
-            ? DragDropEffects.Copy
-            : DragDropEffects.None;
-        e.Handled = true;
+        var hwnd = _webView.Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            Log.Warning("WV2 drop: host HWND unavailable — file drop disabled");
+            return;
+        }
+
+        _fileDropTarget = new FileDropTarget(OnFilesDropped);
+        var hr = NativeDragDrop.RegisterDragDrop(hwnd, _fileDropTarget);
+        if (hr != 0)
+        {
+            Log.Warning("WV2 drop: RegisterDragDrop failed (0x{Hr:X8})", hr);
+            _fileDropTarget = null;
+            return;
+        }
+
+        _dropTargetHwnd = hwnd;
+        Log.Information("WV2 drop: file drop target registered on hwnd 0x{Hwnd:X}", hwnd.ToInt64());
     }
 
-    private void OnFilesDropped(object sender, DragEventArgs e)
+    private void OnFilesDropped(IReadOnlyList<string> paths)
     {
-        e.Handled = true;
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-
-        var paths = e.Data.GetData(DataFormats.FileDrop) as string[];
-        if (paths is null || paths.Length == 0) return;
-
+        // OLE invokes the drop target on the thread that registered it — the
+        // WPF UI thread — so posting to the WebView2 directly is safe.
+        if (paths.Count == 0) return;
         var formatted = FormatDroppedPaths(paths);
-        Log.Information("WV2 drop: {Count} path(s) pasted", paths.Length);
+        Log.Information("WV2 drop: {Count} path(s) pasted", paths.Count);
         PasteText(formatted);
     }
 
