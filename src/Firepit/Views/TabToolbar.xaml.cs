@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Firepit.Core.ProjectConfig;
@@ -21,7 +22,9 @@ public partial class TabToolbar : UserControl
     public event EventHandler? RekindleRequested;
     public event EventHandler? ResumeRequested;
     public event EventHandler? ExplorerRequested;
-    public event EventHandler? ShellRequested;
+    /// <summary>Raised to open an external shell. The bool argument is true to
+    /// launch elevated (run as administrator).</summary>
+    public event EventHandler<bool>? ShellRequested;
     public event EventHandler? ConfigureRequested;
     public event EventHandler<ResolvedQuickLink>? QuickLinkClicked;
     public event EventHandler<ProjectCommand>? CommandClicked;
@@ -179,8 +182,20 @@ public partial class TabToolbar : UserControl
     private void OnRekindleClick(object sender, RoutedEventArgs e)  => RekindleRequested?.Invoke(this, EventArgs.Empty);
     private void OnResumeClick(object sender, RoutedEventArgs e)    => ResumeRequested?.Invoke(this, EventArgs.Empty);
     private void OnExplorerClick(object sender, RoutedEventArgs e)  => ExplorerRequested?.Invoke(this, EventArgs.Empty);
-    private void OnShellClick(object sender, RoutedEventArgs e)     => ShellRequested?.Invoke(this, EventArgs.Empty);
     private void OnConfigureClick(object sender, RoutedEventArgs e) => ConfigureRequested?.Invoke(this, EventArgs.Empty);
+
+    // Left-click opens a normal shell; Shift+Click opens it elevated — the
+    // modifier state is read at click time so it's reliable even though the
+    // WebView2 owns keyboard focus. The right-click context menu exposes the
+    // same two choices for discoverability.
+    private void OnShellClick(object sender, RoutedEventArgs e)
+    {
+        var elevated = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
+        ShellRequested?.Invoke(this, elevated);
+    }
+
+    private void OnShellOpenMenuClick(object sender, RoutedEventArgs e)  => ShellRequested?.Invoke(this, false);
+    private void OnShellAdminMenuClick(object sender, RoutedEventArgs e) => ShellRequested?.Invoke(this, true);
 
     private void OnQuickLinkClick(object sender, RoutedEventArgs e)
     {

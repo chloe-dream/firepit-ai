@@ -437,7 +437,39 @@ public partial class MainWindow : Window
         if (activeTabItem is not null)
         {
             activeTabItem.IsSelected = true;
+            // Selecting normally fires OnTabSelectionChanged → StartDeferredTab.
+            // But when the active tab is also the FIRST tab, the TabControl
+            // auto-selected it back in Tabs.Items.Add — before _deferredResume
+            // was populated — so that event was a no-op and the session never
+            // started. Kick it off explicitly here; StartDeferredTab is
+            // idempotent, so the non-first-tab case (already started by the
+            // event) is a harmless no-op.
+            if (activeTabItem.Tag is SessionTab activeSession)
+            {
+                StartDeferredTab(activeSession);
+            }
         }
+    }
+
+    /// <summary>
+    /// Start a deferred-restore tab's session if it hasn't been started yet.
+    /// Safe to call repeatedly — the <see cref="_deferredResume"/> entry is the
+    /// single-shot guard, removed on first start. Returns true if this call
+    /// kicked off the start.
+    /// </summary>
+    private bool StartDeferredTab(SessionTab session)
+    {
+        if (session.IsStarted)
+        {
+            return false;
+        }
+        if (!_deferredResume.TryGetValue(session.Context.Path, out var resume))
+        {
+            return false;
+        }
+        _deferredResume.Remove(session.Context.Path);
+        StartSession(session, resume);
+        return true;
     }
 
     public void SummonByName(string projectName)
@@ -836,12 +868,7 @@ public partial class MainWindow : Window
             // not eagerly initialized lights up here, the moment the user
             // first selects it. The spinner shows via the existing
             // ShowLoadingIndicator path inside StartSessionAsync.
-            if (!session.IsStarted &&
-                _deferredResume.TryGetValue(session.Context.Path, out var resume))
-            {
-                _deferredResume.Remove(session.Context.Path);
-                StartSession(session, resume);
-            }
+            StartDeferredTab(session);
 
             // Defer focus until layout settles — calling immediately during
             // SelectionChanged races the WebView2 hwnd attach and the focus

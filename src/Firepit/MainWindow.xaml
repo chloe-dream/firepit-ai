@@ -17,7 +17,7 @@
             CaptionHeight="36"
             CornerRadius="0"
             GlassFrameThickness="0"
-            ResizeBorderThickness="12"
+            ResizeBorderThickness="6"
             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
     <!-- Keyboard shortcuts are registered in code-behind

@@ -86,10 +86,17 @@
                     <TextBlock Text="Explorer" VerticalAlignment="Center" />
                 </StackPanel>
             </Button>
-            <Button DockPanel.Dock="Left"
-                    ToolTip="Open external shell here"
+            <Button x:Name="ShellButton"
+                    DockPanel.Dock="Left"
+                    ToolTip="Open external shell here  •  Shift+Click or right-click → run as administrator"
                     Style="{StaticResource ToolbarIconButton}"
                     Click="OnShellClick">
+                <Button.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Open shell here" Click="OnShellOpenMenuClick" />
+                        <MenuItem Header="Open as administrator" Click="OnShellAdminMenuClick" />
+                    </ContextMenu>
+                </Button.ContextMenu>
                 <StackPanel Orientation="Horizontal">
                     <Path Data="{StaticResource IconShell}"
                           Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"

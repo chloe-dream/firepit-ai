@@ -35,7 +35,7 @@ public sealed class SessionTab : IAsyncDisposable
     // terminal is inset by the resize-border width on its three non-caption
     // edges, exposing a ring at the window edge where the chrome's resize
     // hit-testing actually works — including the diagonal bottom corners.
-    private static readonly Thickness TerminalResizeInset = new(12, 0, 12, 12);
+    private static readonly Thickness TerminalResizeInset = new(6, 0, 6, 6);
 
     private readonly IAgentAdapter _adapter;
     private readonly IQuickLinkService _quickLinks;
@@ -116,7 +116,7 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.RekindleRequested += (_, _) => _ = RekindleAsync(resume: false, confirmIfBurning: true);
         _toolbar.ResumeRequested += (_, _) => _ = RekindleAsync(resume: true, confirmIfBurning: true);
         _toolbar.ExplorerRequested += (_, _) => OpenExplorer();
-        _toolbar.ShellRequested += (_, _) => OpenExternalShell();
+        _toolbar.ShellRequested += (_, elevated) => OpenExternalShell(elevated);
         _toolbar.ConfigureRequested += (_, _) => OpenProjectConfig();
         _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
         _toolbar.CommandClicked += (_, cmd) => RunCommand(cmd);
@@ -614,8 +614,16 @@ public sealed class SessionTab : IAsyncDisposable
         }
     }
 
-    private void OpenExternalShell()
+    /// <summary>
+    /// Open an external shell in the project directory. <paramref name="elevated"/>
+    /// adds the <c>runas</c> verb so the shell launches with administrator
+    /// rights (triggers a UAC prompt). Prefers Windows Terminal; falls back to
+    /// PowerShell. A declined UAC prompt is silently ignored — it's a choice,
+    /// not an error.
+    /// </summary>
+    private void OpenExternalShell(bool elevated = false)
     {
+        var verb = elevated ? "runas" : string.Empty;
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -623,7 +631,12 @@ public sealed class SessionTab : IAsyncDisposable
                 FileName = "wt.exe",
                 Arguments = $"-d \"{Context.Path}\"",
                 UseShellExecute = true,
+                Verb = verb,
             });
+        }
+        catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
+        {
+            // ERROR_CANCELLED — user dismissed the UAC prompt. Back out quietly.
         }
         catch
         {
@@ -634,7 +647,12 @@ public sealed class SessionTab : IAsyncDisposable
                     FileName = "powershell.exe",
                     Arguments = $"-NoExit -Command \"Set-Location '{Context.Path}'\"",
                     UseShellExecute = true,
+                    Verb = verb,
                 });
+            }
+            catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
+            {
+                // ERROR_CANCELLED — user dismissed the UAC prompt.
             }
             catch (Exception ex)
             {

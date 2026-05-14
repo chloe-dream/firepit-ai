@@ -5,6 +5,29 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.11] — 2026-05-14
+
+### Fixed
+
+- **The last-active tab now reliably starts on restore.** When the saved
+  active tab happened to be the *first* tab in the restored list, the
+  `TabControl` auto-selected it during `Tabs.Items.Add` — before the
+  deferred-resume bookkeeping was populated — so the selection event was
+  a no-op and the session never started. The active tab is now started
+  explicitly after restore via an idempotent helper, independent of when
+  the selection event fires. Other tabs still stay deferred until clicked.
+- **Resize border trimmed back to 6 px.** v0.5.10's 12 px inset was
+  visually heavier than it needed to be; halved it. The resize hit zone
+  still works on every edge and corner — it just looks tidier.
+
+### Added
+
+- **Open an external shell as administrator.** Right-click the *Shell*
+  toolbar button for "Open shell here" / "Open as administrator", or
+  Shift+Click it for the elevated path directly. Launches Windows
+  Terminal (or PowerShell) with the `runas` verb; a declined UAC prompt
+  is treated as a choice, not an error.
+
 ## [0.5.10] — 2026-05-14
 
 ### Fixed
