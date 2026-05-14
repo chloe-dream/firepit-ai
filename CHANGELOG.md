@@ -5,6 +5,24 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.10] — 2026-05-14
+
+### Fixed
+
+- **Window resize actually works on every edge now.** v0.5.9 widened the
+  resize border but missed the real bug: the WebView2 is a child HWND, and
+  `WindowChrome`'s `WM_NCHITTEST` hook on the top-level window never fires
+  for pixels a child HWND covers. The terminal spanned edge-to-edge, so
+  the left / right / bottom borders and both bottom corners were dead —
+  only the caption-bar edges resized. Fix: inset the WebView2 by the
+  resize-border width (12 px) on its three non-caption edges, exposing a
+  ring at the window edge where the chrome's hit-testing works — including
+  true diagonal resize from the bottom corners. The v0.5.9
+  `ResizeGripDirection` corner grip is removed; it sat under the HwndHost
+  in the airspace and never received input. (Approach confirmed against a
+  second opinion — the alternative, subclassing WebView2's nested HWNDs,
+  is fragile across WebView2 updates and navigation.)
+
 ## [0.5.9] — 2026-05-13
 
 ### Fixed

@@ -29,6 +29,14 @@ public sealed class SessionTab : IAsyncDisposable
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(200);
 
+    // Matches WindowChrome.ResizeBorderThickness in MainWindow.xaml. The
+    // WebView2 is a child HWND — WindowChrome's WM_NCHITTEST hook lives on the
+    // top-level window and never fires for pixels a child HWND covers. So the
+    // terminal is inset by the resize-border width on its three non-caption
+    // edges, exposing a ring at the window edge where the chrome's resize
+    // hit-testing actually works — including the diagonal bottom corners.
+    private static readonly Thickness TerminalResizeInset = new(12, 0, 12, 12);
+
     private readonly IAgentAdapter _adapter;
     private readonly IQuickLinkService _quickLinks;
     private readonly IMcpRegistry? _mcpRegistry;
@@ -367,6 +375,7 @@ public sealed class SessionTab : IAsyncDisposable
                 // hiding it, the spinner is technically present but invisible
                 // because the WebView2 hwnd paints over it.
                 _terminalView.Element.Visibility = Visibility.Hidden;
+                _terminalView.Element.Margin = TerminalResizeInset;
                 _terminalArea.Children.Add(_terminalView.Element);
                 await _terminalView.InitializeAsync(ct);
                 _terminalView.InputReceived += OnInputReceived;
