@@ -325,6 +325,18 @@
                         return false;
                     }
                 }
+                // Enter with an active selection → copy it, clear it, and
+                // swallow the keystroke (no CR to the PTY). Classic conhost
+                // QuickEdit behaviour — long-standing Windows muscle memory.
+                // The selection is visibly highlighted, so the consumed Enter
+                // isn't surprising hidden state. Plain Enter only — any
+                // modifier (incl. Alt) falls through to the shell.
+                if (k === 'Enter' && !ctrl && !shift && !e.altKey && term.hasSelection()) {
+                    postToHost({ type: 'copy', text: term.getSelection() });
+                    term.clearSelection();
+                    e.preventDefault();
+                    return false;
+                }
                 return true;
             });
 

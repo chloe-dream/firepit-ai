@@ -5,6 +5,19 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.12] — 2026-05-14
+
+### Added
+
+- **Enter copies an active selection** (classic conhost QuickEdit
+  behaviour). With text selected in the terminal, plain Enter copies it
+  to the clipboard, clears the selection, and is swallowed — it does not
+  reach the shell. Any modifier (Ctrl / Shift / Alt) lets Enter through
+  to the PTY as normal. Modern Windows Terminal dropped this, but
+  Firepit's audience runs on decades of conhost muscle memory and the
+  selection stays visibly highlighted, so the consumed Enter isn't
+  hidden state.
+
 ## [0.5.11] — 2026-05-14
 
 ### Fixed
