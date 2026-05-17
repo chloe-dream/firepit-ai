@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private readonly IAgentMcpProjector _mcpProjector;
     private readonly ISecretResolver _secretResolver;
     private readonly IStateStore _stateStore;
+    private readonly Firepit.Core.ProjectConfig.CommandsTrustLedger _commandsTrust;
     private readonly IProjectConfigStore _projectConfigStore = new JsonProjectConfigStore();
     private readonly Dictionary<string, IProjectConfigWatcher> _configWatchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, InboxWatcher> _inboxWatchers = new(StringComparer.OrdinalIgnoreCase);
@@ -83,6 +84,7 @@ public partial class MainWindow : Window
         ApplyChromeMetricsFromResources();
 
         _stateStore = new JsonStateStore();
+        _commandsTrust = new Firepit.Core.ProjectConfig.CommandsTrustLedger(_stateStore);
         RunProjectConfigMigrationIfNeeded();
         RunLegacyQuickLinksMigrationIfNeeded();
         ApplyPersistedWindowPlacement();
@@ -706,7 +708,8 @@ public partial class MainWindow : Window
             _mcpProjector,
             terminalTheme: _settings.Terminal,
             terminalFontSize: (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize,
-            initialConfig: initialConfig);
+            initialConfig: initialConfig,
+            trustLedger: _commandsTrust);
         var tabItem = new TabItem
         {
             Header = session.Header,

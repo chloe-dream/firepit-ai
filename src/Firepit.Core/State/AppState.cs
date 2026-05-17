@@ -24,12 +24,28 @@ public sealed record AppState(
     // Window position and size from the previous session. Null on first
     // launch and on legacy state.json files; MainWindow falls back to the
     // XAML defaults (CenterScreen, 1180x700) in that case.
-    WindowPlacement? Window = null)
+    WindowPlacement? Window = null,
+    // Per-project trust ledger for .firepit/config.json files that declare
+    // shell-type commands[]. v0.5.17 issue #11. Entry = (projectPath,
+    // contentSha256). The user is prompted the first time a project's
+    // config gains shell commands, and again after any change to the file
+    // (different hash → re-prompt). Until trusted, RunCommand for shell
+    // type bails. URL and prompt-type commands skip the gate entirely —
+    // they can't execute arbitrary local code.
+    IReadOnlyList<TrustedProjectCommands>? TrustedCommands = null)
 {
     public const int CurrentVersion = 1;
 
     public static readonly AppState Empty = new(CurrentVersion, []);
 }
+
+/// <summary>
+/// One trust grant. <see cref="ProjectPath"/> is the project root absolute
+/// path; <see cref="ConfigSha256"/> is the hex-encoded SHA-256 of the
+/// <c>.firepit/config.json</c> bytes the user approved. Any byte-level edit
+/// invalidates the trust and re-prompts on next session start / hot-reload.
+/// </summary>
+public sealed record TrustedProjectCommands(string ProjectPath, string ConfigSha256);
 
 public sealed record TabState(
     string ProjectName,

@@ -350,6 +350,45 @@ These apply throughout — call them out in PRs/commits:
 
 ---
 
+## M8 — Local Ollama Sidecar (Deferred, v0.6 Target)
+
+> See [issue #10](https://github.com/chloe-dream/firepit-ai/issues/10) for the full proposal.
+
+Bundle an **optional local LLM agent** so Firepit becomes truly
+self-contained — workspace *and* brain — and so users without a Claude
+subscription / Aider API budget still get hands-free MCP-driven
+workflows. Closes the positioning gap between Firepit's "local-first,
+no cloud orchestrator" framing and its current 100%-cloud agent roster.
+
+**Why deferred:** multi-week scope (Ollama bundle strategy, first-run
+wizard, model download UX, new `IAgentAdapter`, hardware-floor
+detection, fan/heat warning) and gated on V1's UX feeling stable
+day-to-day. Filed by the maintainer as roadmap-capture, not a
+near-term commitment.
+
+**Minimum viable cut (v0.6):**
+
+- New `IAgentAdapter` implementation: *Local (Ollama)*, hosted in
+  `Firepit.Adapters` alongside `ClaudeCodeAdapter`. Same activity
+  indicator, same MCP-registry plumbing, same tab UX.
+- First-run wizard prompts whether to install Ollama (sidecar) and
+  which default model — recommendation: Qwen2.5-Coder-7B (Q4, ~4-5 GB,
+  strong JSON tool-calling for MCP).
+- Detect existing Ollama install before offering to bundle one.
+- Bundle strategy: opt-in only. Default off; users who skip pay no
+  installer-size cost.
+
+**Out of scope for M8:** multi-model routing, custom fine-tunes / LoRA,
+concurrent model execution. One active local model at a time, single
+default per user, no fancy switcher.
+
+**Acceptance criteria:** a fresh install with Ollama enabled can open
+a tab of type *Local (Ollama)*, the model answers a "hello" prompt, an
+MCP server activated in `.firepit/config.json` is callable by the
+local agent — end-to-end working without any cloud network call.
+
+---
+
 ## V2 (Reference, Not Committed)
 
 Listed in dependency order so M2-onwards can leave hooks where helpful, not so V2 starts before V1 is done:

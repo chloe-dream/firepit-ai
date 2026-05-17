@@ -42,7 +42,14 @@ public sealed record ProjectCommand(
     IReadOnlyList<string>? Args = null,    // shell
     string? Prompt = null,                 // claude-prompt
     string? Url = null,                    // url
-    bool? Disabled = null);
+    bool? Disabled = null,
+    // v0.5.17 (issue #11 Phase A) — Shell-only knobs that the bumblebeee
+    // capture-on workflow + similar dev loops actually need. window=reuse/
+    // longRunning/inline land in Phase B.
+    string? Cwd = null,                    // shell — relative to project root, default = project root
+    IReadOnlyDictionary<string, string?>? Env = null, // shell — merged onto the spawn env
+    bool? Elevated = null,                 // shell — Windows: Verb=runas (UAC); ignored elsewhere
+    bool? Confirm = null);                 // shell — modal confirm before running (state-changing ops)
 
 public enum ProjectCommandType
 {

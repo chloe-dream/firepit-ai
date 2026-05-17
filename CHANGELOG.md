@@ -5,6 +5,45 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.17] — 2026-05-17
+
+### Added
+
+- **Toolbar quick-commands gain `cwd` / `env` / `elevated` / `confirm`**
+  (issue #11 Phase A). `.firepit/config.json` `commands[]` entries with
+  `type: "shell"` can now declare:
+  - `cwd` — relative (joined onto project root) or absolute. Default =
+    project root.
+  - `env` — extra env vars merged onto the spawn (null = remove key,
+    same semantics as `mcpOverrides`).
+  - `elevated: true` — Windows: `Verb=runas` triggers UAC. Declined
+    prompts are treated as a choice (no error). Required for things
+    like `bumblebeee/tools/capture-on.ps1` that write the hosts file.
+  - `confirm: true` — modal "Run X?" before executing. For state-
+    changing ops like deploys, db drops, hosts-file edits.
+- **Trust prompt for shell commands.** First time a project's
+  `.firepit/config.json` contains shell-type `commands[]`, the first
+  click prompts: *"Trust shell commands from `<project>`?"* with the
+  full list of commands. Once approved, the file's SHA-256 is recorded
+  in `state.json` `trustedCommands[]`. Any byte-level edit invalidates
+  the trust and re-prompts. URL and prompt-type commands skip the gate
+  entirely — they can't execute local code. Mitigates the "cloned repo
+  ships malicious config" risk noted in issue #11.
+
+### Not yet in scope (Phase B, separate release)
+
+- `window: "reuse:<id>"` / `window: "inline"` modes — needs PTY-process
+  lifecycle outside the agent session
+- `longRunning: true` with a Stop-button chip — same dependency
+- Prompt buttons, MCP-tool buttons, sequences, per-command icons/colors
+  — listed in issue #11 as nice-to-haves
+
+### Roadmap
+
+- **M8: Local Ollama Sidecar** (issue #10) entered into
+  `docs/ROADMAP.md` as a v0.6 target. No code yet — multi-week scope,
+  intentionally deferred until V1's UX is stable day-to-day.
+
 ## [0.5.16] — 2026-05-17
 
 ### Fixed

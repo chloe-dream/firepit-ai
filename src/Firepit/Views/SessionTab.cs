@@ -16,6 +16,7 @@ using Firepit.Core.ProjectConfig;
 using Firepit.Core.Projects;
 using Firepit.Core.QuickLinks;
 using Firepit.Core.Sessions;
+using Firepit.Core.State;
 using Firepit.Core.Settings;
 using Firepit.Core.Terminal;
 using Firepit.Core.Time;
@@ -67,6 +68,7 @@ public sealed class SessionTab : IAsyncDisposable
     private WebView2TerminalView? _terminalView;
     private IPtyChannel? _ptyChannel;
     private CancellationTokenSource? _cts;
+    private readonly Firepit.Core.ProjectConfig.CommandsTrustLedger? _trustLedger;
     private bool _initialized;
     private bool _disposed;
 
@@ -79,8 +81,10 @@ public sealed class SessionTab : IAsyncDisposable
         IActivityClock? clock = null,
         TerminalThemeSettings? terminalTheme = null,
         int terminalFontSize = 14,
-        Firepit.Core.ProjectConfig.ProjectConfig? initialConfig = null)
+        Firepit.Core.ProjectConfig.ProjectConfig? initialConfig = null,
+        Firepit.Core.ProjectConfig.CommandsTrustLedger? trustLedger = null)
     {
+        _trustLedger = trustLedger;
         Context = context;
         _adapter = adapter;
         _quickLinks = quickLinks;
@@ -754,6 +758,61 @@ public sealed class SessionTab : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Modal: list every shell command in the current config and ask the user
+    /// to trust them. On approve, the project+hash is recorded in the trust
+    /// ledger so subsequent clicks (and other shell commands in the same
+    /// file) skip the prompt — until the file changes.
+    /// </summary>
+    private bool PromptForCommandsTrust(string hash)
+    {
+        if (_trustLedger is null) return true;
+        var owner = Window.GetWindow(_content);
+        var shellCmds = (_currentConfig?.Commands ?? [])
+            .Where(c => c.Type == Firepit.Core.ProjectConfig.ProjectCommandType.Shell
+                     && c.Disabled != true
+                     && !string.IsNullOrEmpty(c.Command))
+            .ToArray();
+        var list = string.Join('\n', shellCmds.Select(c =>
+        {
+            var args = c.Args is { Count: > 0 } a ? " " + string.Join(' ', a) : string.Empty;
+            var elev = c.Elevated == true ? " (admin)" : string.Empty;
+            return $"  • {c.Name}: {c.Command}{args}{elev}";
+        }));
+
+        var ok = MessageDialog.Show(
+            owner,
+            title: $"Trust shell commands from {Context.Name}?",
+            message:
+                "This project's .firepit/config.json declares shell commands that run with your user privileges. " +
+                "If you cloned this repo from elsewhere, malicious commands may be lurking in here.\n\n" +
+                "Commands declared in the current config:\n\n" +
+                (string.IsNullOrEmpty(list) ? "  (none)" : list) +
+                "\n\nTrust this exact config? Any byte-level edit re-prompts.",
+            primaryLabel: "Trust",
+            secondaryLabel: "Cancel");
+        if (ok)
+        {
+            _trustLedger.Trust(Context.Path, hash);
+            Log.Information("Trusted commands in {Project} (hash {Hash})", Context.Name, hash[..16]);
+            return true;
+        }
+        Log.Information("Trust declined for {Project} commands", Context.Name);
+        return false;
+    }
+
+    /// <summary>
+    /// Resolve the shell command's cwd: absolute path stays as-is; relative
+    /// path joins onto the project root; null/empty defaults to project root.
+    /// Issue #11 Phase A.
+    /// </summary>
+    private string ResolveCwd(Firepit.Core.ProjectConfig.ProjectCommand cmd)
+    {
+        if (string.IsNullOrWhiteSpace(cmd.Cwd)) return Context.Path;
+        if (System.IO.Path.IsPathRooted(cmd.Cwd)) return cmd.Cwd;
+        return System.IO.Path.GetFullPath(System.IO.Path.Combine(Context.Path, cmd.Cwd));
+    }
+
     private void RunCommand(Firepit.Core.ProjectConfig.ProjectCommand cmd)
     {
         try
@@ -762,15 +821,75 @@ public sealed class SessionTab : IAsyncDisposable
             {
                 case Firepit.Core.ProjectConfig.ProjectCommandType.Shell:
                     if (string.IsNullOrEmpty(cmd.Command)) return;
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+
+                    // Trust gate (issue #11). Shell commands can run arbitrary
+                    // code with user privileges — a cloned repo can ship
+                    // anything in .firepit/config.json. Prompt once per
+                    // (project, config-file-hash); any byte-level edit
+                    // invalidates the previous trust.
+                    if (_trustLedger is not null)
+                    {
+                        var hash = Firepit.Core.ProjectConfig.CommandsTrustLedger.HashConfigFile(Context.Path);
+                        if (hash is not null && !_trustLedger.IsTrusted(Context.Path, hash))
+                        {
+                            if (!PromptForCommandsTrust(hash)) return;
+                        }
+                    }
+
+                    // Confirm before state-changing commands (capture-on writes
+                    // the hosts file, db drops, deploys). The user marks them
+                    // with "confirm": true; modal cancel just no-ops.
+                    if (cmd.Confirm == true)
+                    {
+                        var owner = Window.GetWindow(_content);
+                        var argsPreview = cmd.Args is { Count: > 0 } a0 ? " " + string.Join(' ', a0) : string.Empty;
+                        var elevatedNote = cmd.Elevated == true ? " (as administrator)" : string.Empty;
+                        var ok = MessageDialog.Show(
+                            owner,
+                            title: $"Run '{cmd.Name}'?",
+                            message: $"This will execute:\n\n  {cmd.Command}{argsPreview}\n\nin {ResolveCwd(cmd)}{elevatedNote}.",
+                            primaryLabel: "Run",
+                            secondaryLabel: "Cancel");
+                        if (!ok) return;
+                    }
+
+                    var psi = new System.Diagnostics.ProcessStartInfo
                     {
                         FileName = cmd.Command,
                         Arguments = cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty,
-                        WorkingDirectory = Context.Path,
+                        WorkingDirectory = ResolveCwd(cmd),
                         UseShellExecute = true,
                         WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
-                    });
-                    Log.Information("Ran shell command '{Name}' in {Path}", cmd.Name, Context.Path);
+                    };
+                    if (cmd.Elevated == true)
+                    {
+                        // Windows: triggers UAC; ERROR_CANCELLED if user declines.
+                        psi.Verb = "runas";
+                    }
+                    if (cmd.Env is { Count: > 0 } env)
+                    {
+                        // UseShellExecute=true means we can only seed extra env
+                        // vars via the ProcessStartInfo.Environment dictionary
+                        // before launch; nulls remove (matches mcpOverrides
+                        // semantics). Inheritance is automatic.
+                        foreach (var (k, v) in env)
+                        {
+                            if (v is null) psi.Environment.Remove(k);
+                            else            psi.Environment[k] = v;
+                        }
+                    }
+
+                    try
+                    {
+                        System.Diagnostics.Process.Start(psi);
+                        Log.Information("Ran shell command '{Name}' in {Path} (elevated={Elev}, env+={EnvCount})",
+                            cmd.Name, psi.WorkingDirectory, cmd.Elevated == true, cmd.Env?.Count ?? 0);
+                    }
+                    catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
+                    {
+                        // ERROR_CANCELLED — UAC declined. Treat as user choice.
+                        Log.Information("Shell command '{Name}' aborted at UAC prompt", cmd.Name);
+                    }
                     break;
                 case Firepit.Core.ProjectConfig.ProjectCommandType.ClaudePrompt:
                     if (string.IsNullOrEmpty(cmd.Prompt) || _ptyChannel is null) return;
