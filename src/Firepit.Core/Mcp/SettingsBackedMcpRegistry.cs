@@ -7,24 +7,48 @@ namespace Firepit.Core.Mcp;
 
 public sealed class SettingsBackedMcpRegistry : IMcpRegistry
 {
+    /// <summary>
+    /// Built-in "firepit" server entry, seeded into every registry so users
+    /// don't have to declare it in their global settings.json to use it. The
+    /// command is just <c>firepit-mcp</c>; the bridge sits on PATH and tunnels
+    /// stdio to the in-process named-pipe MCP host. Users can override by
+    /// declaring their own <c>"firepit"</c> entry in settings.mcpServers.
+    /// </summary>
+    public const string BuiltInFirepitId = "firepit";
+
     private readonly IReadOnlyList<McpRegistryEntry> _entries;
     private readonly IReadOnlyDictionary<string, McpRegistryEntry> _byId;
     private readonly IReadOnlyDictionary<string, (IReadOnlyList<string> Active, IReadOnlyDictionary<string, McpOverride> Overrides)> _legacyProjectActivations;
     private readonly Func<string, ProjectConfig.ProjectConfig?>? _projectConfigLoader;
     private readonly ISecretResolver _resolver;
+    private readonly Action<string>? _warn;
 
     public SettingsBackedMcpRegistry(
         FirepitSettings settings,
         ISecretResolver resolver,
-        Func<string, ProjectConfig.ProjectConfig?>? projectConfigLoader = null)
+        Func<string, ProjectConfig.ProjectConfig?>? projectConfigLoader = null,
+        Action<string>? warn = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _projectConfigLoader = projectConfigLoader;
+        _warn = warn;
 
-        _entries = (settings.McpServers ?? new Dictionary<string, McpServerSettings>())
+        var userEntries = (settings.McpServers ?? new Dictionary<string, McpServerSettings>())
             .Select(kvp => MapEntry(kvp.Key, kvp.Value))
             .ToArray();
+
+        // Always seed firepit unless the user explicitly overrides it. v0.5.13
+        // and earlier silently dropped any project activation whose id wasn't
+        // declared in global settings — which left .firepit's own MCP tools
+        // unreachable on a fresh install (issue #12).
+        var hasUserFirepit = userEntries.Any(e =>
+            string.Equals(e.Id, BuiltInFirepitId, StringComparison.OrdinalIgnoreCase));
+        var allEntries = hasUserFirepit
+            ? (IReadOnlyList<McpRegistryEntry>)userEntries
+            : (IReadOnlyList<McpRegistryEntry>)new[] { BuildFirepitBuiltIn() }.Concat(userEntries).ToArray();
+
+        _entries = allEntries;
         _byId = _entries.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
 
         var projectMap = new Dictionary<string, (IReadOnlyList<string>, IReadOnlyDictionary<string, McpOverride>)>(StringComparer.OrdinalIgnoreCase);
@@ -87,6 +111,12 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
         {
             if (!_byId.TryGetValue(act.Id, out var entry))
             {
+                // Pre-v0.5.16 this was a silent drop — projects activating an
+                // MCP id that wasn't declared in global settings would get 0
+                // servers projected with no clue why (issue #12).
+                _warn?.Invoke(
+                    $"Project activates MCP id '{act.Id}' but no such server is registered. " +
+                    "Declare it in %APPDATA%\\Firepit\\settings.json under mcpServers, or remove the activation.");
                 continue;
             }
             var ov = new McpOverride(
@@ -185,4 +215,16 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
         "sse"   => McpTransport.Sse,
         _       => McpTransport.Stdio,
     };
+
+    private static McpRegistryEntry BuildFirepitBuiltIn() => new(
+        Id:          BuiltInFirepitId,
+        DisplayName: "Firepit",
+        Transport:   McpTransport.Stdio,
+        Description: "Firepit built-in: cross-project messaging (firepit_send_to / firepit_inbox_*), " +
+                     "project introspection, tab control. Bridge: firepit-mcp.exe ⇄ named-pipe ⇄ Firepit GUI.",
+        Command:     "firepit-mcp",
+        Args:        null,
+        Environment: null,
+        Url:         null,
+        Headers:     null);
 }

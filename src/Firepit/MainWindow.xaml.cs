@@ -84,13 +84,18 @@ public partial class MainWindow : Window
 
         _stateStore = new JsonStateStore();
         RunProjectConfigMigrationIfNeeded();
+        RunLegacyQuickLinksMigrationIfNeeded();
         ApplyPersistedWindowPlacement();
 
         _quickLinks = BuildQuickLinkService(_settings);
         _secretResolver = new CompositeSecretResolver(
             new EnvironmentSecretProvider(),
             new CredentialManagerSecretProvider());
-        _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver, _projectConfigStore.Load);
+        _mcpRegistry = new SettingsBackedMcpRegistry(
+            _settings,
+            _secretResolver,
+            _projectConfigStore.Load,
+            warn: msg => Log.Warning("McpRegistry: {Message}", msg));
         _mcpProjector = new ClaudeCodeMcpProjector();
 
         PickerList.ItemsSource = _pickerItems;
@@ -310,6 +315,12 @@ public partial class MainWindow : Window
         }
         MaybePromptForMetaProject();
         StartJobScheduler();
+
+        // Start the MCP host now that this MainWindow (the IMcpBackend) exists.
+        // App.OnStartup can't do this — StartupUri-based window construction
+        // hadn't happened yet at that point in v0.5.13–v0.5.15, which is why
+        // the firepit MCP server was unreachable. Issue #12.
+        (Application.Current as App)?.EnsureMcpHostStarted(this);
     }
 
     private async void StartJobScheduler()
@@ -538,6 +549,76 @@ public partial class MainWindow : Window
         Target: source.Target == QuickLinkTargetSetting.External ? QuickLinkTarget.External : QuickLinkTarget.SubTab,
         Icon: source.Icon,
         Disabled: source.Disabled ?? false);
+
+    /// <summary>
+    /// One-shot strip of the two legacy default quickLinks that pre-v0.5.0
+    /// Firepit hardcoded into every fresh settings.json — issue #14. Both
+    /// pointed at infrastructure that's NOT a default-install assumption:
+    /// <list type="bullet">
+    ///   <item>GitHub → <c>github.com/chloe-dream/{projectName}</c> (the maintainer's org)</item>
+    ///   <item>Fishbowl → <c>localhost:7180/p/{projectName}</c> (a soft-wired optional integration that needs per-project provisioning)</item>
+    /// </list>
+    /// Removed only on exact name+url match — anyone who customised either
+    /// entry keeps theirs. A toast tells the user what happened so they can
+    /// re-add via Settings if they actually want the link.
+    /// </summary>
+    private void RunLegacyQuickLinksMigrationIfNeeded()
+    {
+        AppState state;
+        try { state = _stateStore.Load(); }
+        catch { return; }
+        if (state.LegacyQuickLinksMigrationDone) return;
+
+        var existing = (_settings.QuickLinks ?? []).ToList();
+        if (existing.Count == 0)
+        {
+            try { _stateStore.Save(state with { LegacyQuickLinksMigrationDone = true }); }
+            catch { /* best effort */ }
+            return;
+        }
+
+        const string LegacyGitHubUrl   = "https://github.com/chloe-dream/{projectName}";
+        const string LegacyFishbowlUrl = "https://localhost:7180/p/{projectName}";
+
+        var removed = new List<string>();
+        var kept = new List<QuickLinkSettings>(existing.Count);
+        foreach (var link in existing)
+        {
+            var isLegacyGitHub   = string.Equals(link.Name, "GitHub",   StringComparison.OrdinalIgnoreCase)
+                                && string.Equals(link.Url,  LegacyGitHubUrl,   StringComparison.OrdinalIgnoreCase);
+            var isLegacyFishbowl = string.Equals(link.Name, "Fishbowl", StringComparison.OrdinalIgnoreCase)
+                                && string.Equals(link.Url,  LegacyFishbowlUrl, StringComparison.OrdinalIgnoreCase);
+            if (isLegacyGitHub || isLegacyFishbowl)
+            {
+                removed.Add(link.Name);
+            }
+            else
+            {
+                kept.Add(link);
+            }
+        }
+
+        if (removed.Count > 0)
+        {
+            _settings = _settings with { QuickLinks = kept };
+            try
+            {
+                _settingsStore.Save(_settings);
+                Log.Information("Removed legacy default quickLinks: {Names}", string.Join(", ", removed));
+                // Defer the toast until MainWindow's actually loaded.
+                Loaded += (_, _) => ShowToast(
+                    $"Removed legacy default quick-link(s): {string.Join(", ", removed)}. " +
+                    "Re-add via Settings → Quick-links if you actually use them.");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not save settings after legacy quickLinks strip");
+            }
+        }
+
+        try { _stateStore.Save(state with { LegacyQuickLinksMigrationDone = true }); }
+        catch { /* best effort */ }
+    }
 
     private void RunProjectConfigMigrationIfNeeded()
     {
@@ -1245,7 +1326,11 @@ public partial class MainWindow : Window
         {
             _settings = updated;
             _quickLinks = BuildQuickLinkService(_settings);
-            _mcpRegistry = new SettingsBackedMcpRegistry(_settings, _secretResolver);
+            _mcpRegistry = new SettingsBackedMcpRegistry(
+                _settings,
+                _secretResolver,
+                _projectConfigStore.Load,
+                warn: msg => Log.Warning("McpRegistry: {Message}", msg));
             ReloadProjectList();
 
             var newFontSize = (_settings.Ui ?? UiSettings.Defaults).ResolvedFontSize;

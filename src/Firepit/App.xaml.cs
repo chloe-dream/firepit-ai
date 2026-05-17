@@ -49,25 +49,31 @@ public partial class App : Application
         _guard.StartListening(HandleSingletonCommand);
         base.OnStartup(e);
 
-        // Start the MCP host once MainWindow exists (base.OnStartup creates it
-        // via App.xaml's StartupUri). Wire it to the dispatcher Loaded event so
-        // we don't race the window's own initialisation.
-        if (MainWindow is MainWindow mw)
+        // NOTE: do NOT attach to MainWindow.Loaded here. WPF defers the
+        // StartupUri's window construction to a follow-up dispatcher op, so
+        // Application.MainWindow is still null at this point and the
+        // 'is MainWindow mw' check silently no-ops — that's how the MCP host
+        // failed to start at all in v0.5.13–v0.5.15 (see issue #12). MainWindow
+        // calls EnsureMcpHostStarted from its own OnLoaded instead.
+    }
+
+    /// <summary>
+    /// Idempotent. Called by MainWindow once it has loaded, because App.OnStartup
+    /// can't reliably reach MainWindow at the time it runs (StartupUri is
+    /// processed after OnStartup returns).
+    /// </summary>
+    public void EnsureMcpHostStarted(IMcpBackend backend)
+    {
+        if (_mcpHost is not null) return;
+        try
         {
-            mw.Loaded += (_, _) =>
-            {
-                if (_mcpHost is not null) return;
-                try
-                {
-                    var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.5.0";
-                    _mcpHost = new McpHost(mw, version);
-                    _mcpHost.Start();
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "MCP host failed to start");
-                }
-            };
+            var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.5.0";
+            _mcpHost = new McpHost(backend, version);
+            _mcpHost.Start();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "MCP host failed to start");
         }
     }
 

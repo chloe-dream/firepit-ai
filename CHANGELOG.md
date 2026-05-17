@@ -5,6 +5,44 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.16] — 2026-05-17
+
+### Fixed
+
+- **Firepit's own MCP server actually works now** (issue #12). Two
+  independent bugs both contributed to "Projecting 0 MCP servers" for
+  every project + `/mcp` failing with opaque `-32000`:
+  - The MCP host was never starting. `App.OnStartup` checked
+    `Application.MainWindow` immediately after `base.OnStartup`, but WPF
+    defers the StartupUri window construction to the next dispatcher
+    cycle — so the property was always null and the Loaded-handler
+    attachment silently no-op'd. MainWindow now calls
+    `App.EnsureMcpHostStarted(this)` from its own `OnLoaded`, where the
+    backend definitely exists.
+  - The registry only resolved MCP ids declared in global
+    `settings.json` → `mcpServers{}`. Any project that activated
+    `firepit` (the meta-project's own config does this) got silently
+    dropped because no user has `firepit` in their global registry —
+    it's not their job to declare a built-in capability. The registry
+    now seeds a built-in `firepit` entry (`command: firepit-mcp`, stdio
+    transport) which users can override but don't need to declare.
+  - Unknown-id activations now fire a warn callback so
+    `%LOCALAPPDATA%\Firepit\logs\firepit-*.log` shows what dropped and
+    why, instead of going silent.
+- **Right-click context menus respect the dark theme** (issue #13).
+  Implicit `Style TargetType="ContextMenu"` + `MenuItem` + `Separator`
+  in the Common.xaml resource dict — same warm-dark palette as the rest
+  of the chrome, hover uses the existing `#2A211A` accent. Affects
+  every WPF context menu (tab strip, etc.).
+- **Stripped two legacy default quick-links** that pre-v0.5.0 Firepit
+  hardcoded into every settings.json (issue #14):
+  `github.com/chloe-dream/{projectName}` and `localhost:7180/p/{projectName}`.
+  Both pointed at non-default infrastructure (maintainer's org / a
+  soft-wired optional integration that needs per-project provisioning).
+  The strip only removes entries whose name+url exactly match the known
+  seeds — customised entries with the same names stay. A toast tells
+  the user which entries were removed so they can re-add via Settings.
+
 ## [0.5.15] — 2026-05-17
 
 ### Added

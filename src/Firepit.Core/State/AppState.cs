@@ -9,6 +9,13 @@ public sealed record AppState(
     // default (false) and the migrator runs on next launch — safe because
     // it's idempotent (skips projects already migrated).
     bool ProjectConfigMigrationDone = false,
+    // True once the v0.5.16 strip has removed the legacy default quickLinks
+    // (GitHub→chloe-dream/{projectName}, Fishbowl→localhost:7180/p/{projectName})
+    // that early Firepit versions seeded into every user's settings.json.
+    // Issue #14. Idempotent: only entries whose name+url exactly match the
+    // known legacy seeds are touched; user-added or customised entries with
+    // the same name stay.
+    bool LegacyQuickLinksMigrationDone = false,
     // Name of the tab that was active when the app last closed. On restore,
     // this tab gets focus and is the only one whose session starts eagerly;
     // others stay cold until the user clicks them. Null = legacy/no

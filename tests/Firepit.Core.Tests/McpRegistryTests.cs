@@ -24,8 +24,66 @@ public class McpRegistryTests
         });
         var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
 
+        // The registry always seeds a built-in 'firepit' entry alongside user
+        // entries (v0.5.16, issue #12). User entries with id 'firepit' would
+        // override; here they don't, so we expect three IDs total.
         var ids = registry.All.Select(e => e.Id).OrderBy(s => s).ToArray();
-        Assert.Equal(["fishbowl", "grok"], ids);
+        Assert.Equal(["firepit", "fishbowl", "grok"], ids);
+    }
+
+    [Fact]
+    public void All_BuiltInFirepitIsSeededWhenAbsent()
+    {
+        var settings = WithMcp(new());
+        var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
+
+        var firepit = registry.Find("firepit");
+        Assert.NotNull(firepit);
+        Assert.Equal("firepit-mcp", firepit!.Command);
+        Assert.Equal(McpTransport.Stdio, firepit.Transport);
+    }
+
+    [Fact]
+    public void All_UserFirepitOverridesBuiltIn()
+    {
+        // A user who wants to e.g. add args or env to the firepit MCP server
+        // can declare their own entry under the same id. The built-in entry
+        // is dropped in favour of theirs; nothing is duplicated.
+        var settings = WithMcp(new()
+        {
+            ["firepit"] = new("My Firepit", "stdio", Command: "C:/custom/firepit-mcp.exe"),
+        });
+        var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
+
+        var ids = registry.All.Select(e => e.Id).OrderBy(s => s).ToArray();
+        Assert.Equal(["firepit"], ids);
+        Assert.Equal("C:/custom/firepit-mcp.exe", registry.Find("firepit")!.Command);
+    }
+
+    [Fact]
+    public void ResolveForProject_UnknownActivationViaProjectConfigCallsWarn()
+    {
+        // The new path that goes via .firepit/config.json mcpActivations — when
+        // it references an id that's not in the global registry (or built-in),
+        // the registry now logs through the warn callback instead of silently
+        // dropping. v0.5.16 fix for issue #12: pre-v0.5.16 this drop is exactly
+        // why "Projecting 0 MCP server(s)" went unnoticed.
+        var warnings = new List<string>();
+        var settings = WithMcp(new());
+        var registry = new SettingsBackedMcpRegistry(
+            settings,
+            new EnvironmentSecretProvider(),
+            projectConfigLoader: _ => new Firepit.Core.ProjectConfig.ProjectConfig(
+                Version: 1,
+                McpActivations:
+                [
+                    new Firepit.Core.ProjectConfig.ProjectMcpActivation(Id: "nope-not-registered"),
+                ]),
+            warn: msg => warnings.Add(msg));
+
+        var resolved = registry.ResolveForProject(Ctx(@"D:\p"));
+        Assert.Empty(resolved);
+        Assert.Contains(warnings, w => w.Contains("nope-not-registered"));
     }
 
     [Fact]
