@@ -474,6 +474,28 @@ public sealed class SessionTab : IAsyncDisposable
             try { await _ptyChannel.DisposeAsync(); } catch { /* ignored */ }
             _ptyChannel = null;
         }
+        // If WV2 init was cancelled mid-flight (typical when the user mashes
+        // Restart while the first session is still booting), the view is
+        // half-built — CoreWebView2 may be null, every WriteAsync would NRE.
+        // Reusing it would leave the console blank ("frozen"). Drop it so the
+        // next StartSessionAsync creates a fresh view from scratch.
+        if (_terminalView is not null && !_terminalView.IsInitialized)
+        {
+            Log.Information("Dropping half-initialised terminal view for {Project}", Context.Name);
+            try
+            {
+                if (_terminalArea.Children.Contains(_terminalView.Element))
+                {
+                    _terminalArea.Children.Remove(_terminalView.Element);
+                }
+                _terminalView.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Disposing half-initialised terminal failed for {Project}", Context.Name);
+            }
+            _terminalView = null;
+        }
         _cts?.Dispose();
         _cts = null;
         _initialized = false;

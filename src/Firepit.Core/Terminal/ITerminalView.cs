@@ -2,6 +2,14 @@ namespace Firepit.Core.Terminal;
 
 public interface ITerminalView : IDisposable
 {
+    /// <summary>
+    /// True once <see cref="InitializeAsync"/> has completed successfully.
+    /// Stays false if init was cancelled or threw — letting callers detect
+    /// a half-built view and dispose it before reuse (a CoreWebView2 left
+    /// null after cancellation cannot accept any further posts).
+    /// </summary>
+    bool IsInitialized { get; }
+
     Task InitializeAsync(CancellationToken ct);
 
     ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken ct);

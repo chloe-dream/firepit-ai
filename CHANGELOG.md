@@ -5,6 +5,31 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.14] — 2026-05-17
+
+### Fixed
+
+- **Session restore actually restores only the active tab.** Before, a
+  four-tab restore was queueing two WebView2 inits in parallel: the first
+  tab's auto-select (during `Tabs.Items.Add`) would race a spurious
+  follow-up `SelectionChanged` re-fire, and by the time the second event
+  ran `_deferredResume` had been populated — so a non-active tab booted
+  eagerly behind the active tab's ~45 s WebView2 cold start. The active
+  tab's `WV2` ended up parented to a Grid that wasn't in the visual tree
+  yet, and its `ready` handshake timed out. RestoreTabsFromState now sets
+  a `_restoring` guard for the entire loop, `OnTabSelectionChanged` skips
+  the deferred-start path while the guard is up, and the active tab is
+  started by a single explicit kick at the end of restore.
+- **Restart no longer leaves the console frozen.** When the user hit the
+  Restart button while a session's initial WebView2 init was still in
+  flight, `TeardownSessionAsync` cancelled the token but kept the
+  half-built `_terminalView`. The next `StartSessionAsync` then skipped
+  re-creating it (because `_terminalView` was non-null), so every PTY
+  byte posted to a `CoreWebView2` that never came up — visible to the
+  user as a blank, unresponsive terminal. Teardown now detects an
+  uninitialised view via the new `ITerminalView.IsInitialized` flag and
+  disposes it, so Rekindle always boots a fresh terminal.
+
 ## [0.5.13] — 2026-05-14
 
 ### Fixed

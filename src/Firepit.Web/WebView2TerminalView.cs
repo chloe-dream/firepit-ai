@@ -48,6 +48,8 @@ public sealed class WebView2TerminalView : ITerminalView
 
     public TerminalSize? CurrentSize { get; private set; }
 
+    public bool IsInitialized => _initialized;
+
     public async Task InitializeAsync(CancellationToken ct)
     {
         if (_initialized)

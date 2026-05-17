@@ -52,6 +52,16 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, bool> _deferredResume = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingMigrationCount;
 
+    // True while RestoreTabsFromState is mid-loop. Suppresses StartDeferredTab
+    // inside OnTabSelectionChanged so the spurious SelectionChanged re-fires
+    // WPF emits during back-to-back Tabs.Items.Add can't accidentally start
+    // a non-active tab. The active tab is started explicitly at the end of
+    // the restore. Without this guard a 4-tab restore with claude-code
+    // sessions ended up queueing two WebView2 inits behind a single 45 s cold
+    // start — Firepit-ai (the actual active tab) timed out and the other tab
+    // booted into a window that wasn't visible.
+    private bool _restoring;
+
     // Drag-reorder state. _dragSource is the TabItem under cursor on
     // PreviewMouseDown; cleared on drag-start so the same press can't fire
     // twice. _dragStart is the press point in Tabs-local coords for hysteresis.
@@ -414,40 +424,46 @@ public partial class MainWindow : Window
             return;
         }
 
-        var byName = _allProjects.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+        _restoring = true;
         TabItem? activeTabItem = null;
-        foreach (var tab in state.Tabs)
+        try
         {
-            if (!byName.TryGetValue(tab.ProjectName, out var project))
+            var byName = _allProjects.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+            foreach (var tab in state.Tabs)
             {
-                continue;
+                if (!byName.TryGetValue(tab.ProjectName, out var project))
+                {
+                    continue;
+                }
+                var (tabItem, _) = AddSessionTab(project, resume: tab.LastSessionResumable, deferred: true);
+                if (string.Equals(tab.ProjectName, state.ActiveTabProjectName, StringComparison.OrdinalIgnoreCase))
+                {
+                    activeTabItem = tabItem;
+                }
             }
-            var (tabItem, _) = AddSessionTab(project, resume: tab.LastSessionResumable, deferred: true);
-            if (string.Equals(tab.ProjectName, state.ActiveTabProjectName, StringComparison.OrdinalIgnoreCase))
+
+            // Decide which tab to focus. Saved active-tab wins; fallback to the
+            // last tab in the list (pre-v0.5.3 behaviour) so users who upgrade
+            // mid-session still see something sensible.
+            activeTabItem ??= Tabs.Items.OfType<TabItem>().LastOrDefault();
+            if (activeTabItem is not null)
             {
-                activeTabItem = tabItem;
+                activeTabItem.IsSelected = true;
             }
         }
-
-        // Decide which tab to focus. Saved active-tab wins; fallback to the
-        // last tab in the list (pre-v0.5.3 behaviour) so users who upgrade
-        // mid-session still see something sensible. Selecting the tab fires
-        // OnTabSelectionChanged → that starts the session for that tab only.
-        activeTabItem ??= Tabs.Items.OfType<TabItem>().LastOrDefault();
-        if (activeTabItem is not null)
+        finally
         {
-            activeTabItem.IsSelected = true;
-            // Selecting normally fires OnTabSelectionChanged → StartDeferredTab.
-            // But when the active tab is also the FIRST tab, the TabControl
-            // auto-selected it back in Tabs.Items.Add — before _deferredResume
-            // was populated — so that event was a no-op and the session never
-            // started. Kick it off explicitly here; StartDeferredTab is
-            // idempotent, so the non-first-tab case (already started by the
-            // event) is a harmless no-op.
-            if (activeTabItem.Tag is SessionTab activeSession)
-            {
-                StartDeferredTab(activeSession);
-            }
+            _restoring = false;
+        }
+
+        // Now that the restore loop is done and the guard is off, start ONLY
+        // the active tab. Every selection-change event during the loop was
+        // suppressed by _restoring — without this explicit kick the active
+        // tab would stay deferred forever.
+        if (activeTabItem?.Tag is SessionTab activeSession)
+        {
+            Log.Information("Restore: explicitly starting active tab {Project}", activeSession.Context.Name);
+            StartDeferredTab(activeSession);
         }
     }
 
@@ -868,7 +884,17 @@ public partial class MainWindow : Window
             // not eagerly initialized lights up here, the moment the user
             // first selects it. The spinner shows via the existing
             // ShowLoadingIndicator path inside StartSessionAsync.
-            StartDeferredTab(session);
+            //
+            // Guard: during RestoreTabsFromState's loop, WPF fires spurious
+            // SelectionChanged events as Tabs.Items.Add triggers layout. If
+            // we honoured them we'd start non-active tabs eagerly — each one
+            // queueing behind the active tab's WebView2 init (~45 s cold).
+            // The restore method does an explicit StartDeferredTab call for
+            // the active tab after the loop finishes.
+            if (!_restoring)
+            {
+                StartDeferredTab(session);
+            }
 
             // Defer focus until layout settles — calling immediately during
             // SelectionChanged races the WebView2 hwnd attach and the focus
