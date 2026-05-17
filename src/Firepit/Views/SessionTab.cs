@@ -118,6 +118,7 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.ExplorerRequested += (_, _) => OpenExplorer();
         _toolbar.ShellRequested += (_, elevated) => OpenExternalShell(elevated);
         _toolbar.ConfigureRequested += (_, _) => OpenProjectConfig();
+        _toolbar.InboxRequested += (_, _) => OnInboxButtonClicked();
         _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
         _toolbar.CommandClicked += (_, cmd) => RunCommand(cmd);
         _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
@@ -225,23 +226,93 @@ public sealed class SessionTab : IAsyncDisposable
     public UIElement Header => _headerPanel;
 
     /// <summary>
-    /// Update the inbox badge for this session. Called by MainWindow's
-    /// InboxWatcher subscription. Set unreadCount=0 to hide.
+    /// Update the tab-header inbox notification badge — "new since last
+    /// activated." Set newSinceSeenCount=0 to hide. The click handler is
+    /// attached by MainWindow because it owns the inbox-folder path.
     /// </summary>
-    public void SetInboxBadge(int unreadCount, MouseButtonEventHandler? onClick = null)
+    public void SetInboxBadge(int newSinceSeenCount, MouseButtonEventHandler? onClick = null)
     {
         if (_disposed) return;
-        if (unreadCount <= 0)
+        if (newSinceSeenCount <= 0)
         {
             _inboxBadge.Visibility = Visibility.Collapsed;
             return;
         }
-        _inboxBadgeCount.Text = unreadCount > 99 ? "99+" : unreadCount.ToString();
+        _inboxBadgeCount.Text = newSinceSeenCount > 99 ? "99+" : newSinceSeenCount.ToString();
         _inboxBadge.Visibility = Visibility.Visible;
         if (onClick is not null)
         {
             _inboxBadge.MouseLeftButtonUp -= onClick;  // dedup before re-attach
             _inboxBadge.MouseLeftButtonUp += onClick;
+        }
+    }
+
+    /// <summary>
+    /// Update the always-visible Inbox toolbar button counter — total
+    /// un-processed messages. Click handler is wired in the constructor
+    /// (raises InboxRequested → <see cref="OnInboxButtonClicked"/>).
+    /// </summary>
+    public void SetInboxToolbarCount(int unprocessedCount)
+    {
+        if (_disposed) return;
+        _unprocessedInboxCount = Math.Max(0, unprocessedCount);
+        _toolbar.SetInboxCount(_unprocessedInboxCount);
+    }
+
+    private int _unprocessedInboxCount;
+
+    /// <summary>
+    /// Toolbar-button click handler: ask once, then hand the whole inbox to
+    /// the running Claude session as a single prompt. Claude has the
+    /// firepit_inbox_list / firepit_inbox_complete MCP tools; this just
+    /// kicks off the workflow. The user can Ctrl-C in the terminal to abort
+    /// at any point.
+    /// </summary>
+    private void OnInboxButtonClicked()
+    {
+        if (_disposed) return;
+        if (_unprocessedInboxCount <= 0) return; // shouldn't happen — button is disabled
+        if (_ptyChannel is null)
+        {
+            var owner = Window.GetWindow(_content);
+            MessageDialog.Show(owner,
+                title: "Session not running",
+                message: "Start or resume the session first — the inbox prompt is delivered through Claude in this tab.",
+                primaryLabel: "OK",
+                secondaryLabel: null);
+            return;
+        }
+
+        var ownerWin = Window.GetWindow(_content);
+        var n = _unprocessedInboxCount;
+        var noun = n == 1 ? "Nachricht" : "Nachrichten";
+        var confirmed = MessageDialog.Show(
+            ownerWin,
+            title: $"Inbox abarbeiten ({n} {noun})?",
+            message: $"Es liegen {n} unbearbeitete {noun} in der Inbox. " +
+                     "Wenn du fortfährst, übergibt Firepit alle an die laufende Claude-Session — Claude listet sie via firepit_inbox_list, " +
+                     "arbeitet sie nacheinander ab und markiert sie mit firepit_inbox_complete als erledigt. " +
+                     "Du kannst jederzeit mit Ctrl+C im Terminal abbrechen.",
+            primaryLabel: "Inbox abarbeiten",
+            secondaryLabel: "Abbrechen");
+        if (!confirmed) return;
+
+        const string prompt =
+            "Verarbeite jetzt alle ausstehenden Nachrichten in der Firepit-Inbox dieses Projekts. " +
+            "Schritt 1: rufe `firepit_inbox_list` auf. " +
+            "Schritt 2: arbeite jede Nachricht der Reihe nach ab — bei Aktion fragst du mich vorher, bei reiner Info reicht eine Zusammenfassung. " +
+            "Schritt 3: markiere jede abgearbeitete Nachricht via `firepit_inbox_complete` (id aus der Liste). " +
+            "Wenn die Liste leer ist, sage nur \"Inbox leer\" und stoppe.";
+
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(prompt + "\n");
+            _ = _ptyChannel.WriteAsync(bytes, _cts?.Token ?? CancellationToken.None);
+            Log.Information("Inbox prompt sent to {Project} (queued {Count} messages)", Context.Name, n);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Inbox prompt write failed for {Project}", Context.Name);
         }
     }
 

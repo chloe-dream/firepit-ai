@@ -72,6 +72,37 @@ internal static class McpToolDefinitions
             }
             """),
 
+        new("firepit_inbox_list",
+            "List pending (un-processed) inbox messages for a project. " +
+            "Defaults to the calling agent's own project. Each entry contains " +
+            "the id (filename) plus parsed frontmatter (from / subject / priority / date) " +
+            "and the markdown body. Files moved to inbox/processed/ are excluded.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "projectName": { "type": "string", "description": "Project to inspect; omit for the caller's own project." }
+              },
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_inbox_complete",
+            "Mark an inbox message as processed by moving the file from " +
+            "<project>/.firepit/inbox/<id> into the sibling inbox/processed/ folder. " +
+            "Pass the 'id' returned by firepit_inbox_list. Idempotent.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "id":          { "type": "string", "description": "Filename of the inbox message (as returned by firepit_inbox_list)." },
+                "projectName": { "type": "string", "description": "Project containing the message; omit for the caller's own project." }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+            """),
+
         new("firepit_send_to",
             "Drop a markdown message into <toProject>/.firepit/inbox/. The receiving project's " +
             "Claude reads its inbox at session start (per the seed CLAUDE.md convention). " +

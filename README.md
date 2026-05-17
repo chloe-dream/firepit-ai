@@ -4,7 +4,7 @@
 
 A local, personal workspace for AI coding agents. Tabs, status indicators, and a project switcher around the CLI tools you already use — without dragging you into a cloud or an editor.
 
-> **Status: V1 feature-complete + V0.5.x platform layer in daily-driver use.** Latest release: `v0.5.14` — see [`CHANGELOG.md`](./CHANGELOG.md). The v0.5 line added per-project `.firepit/` config, the Firepit MCP server, a hidden meta-project, cross-Claude inbox, lazy tab restore, keyboard shortcuts, window placement persistence, and scheduled jobs.
+> **Status: V1 feature-complete + V0.5.x platform layer in daily-driver use.** Latest release: `v0.5.15` — see [`CHANGELOG.md`](./CHANGELOG.md). The v0.5 line added per-project `.firepit/` config, the Firepit MCP server, a hidden meta-project, cross-Claude inbox, lazy tab restore, keyboard shortcuts, window placement persistence, and scheduled jobs.
 
 ---
 

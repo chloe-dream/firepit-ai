@@ -5,6 +5,33 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.15] — 2026-05-17
+
+### Added
+
+- **Inbox workflow: one click, Claude processes the queue.** A new
+  always-visible **Inbox** toolbar button sits between Resume and Explorer
+  on every tab. Greyed out when empty; shows `Inbox (N)` and becomes
+  clickable when messages arrive. Click → modal ("N Nachrichten — gemeinsam
+  abarbeiten?") → on confirm Firepit hands the running Claude session a
+  prompt that uses two new MCP tools, `firepit_inbox_list` and
+  `firepit_inbox_complete`, to walk the queue and move each processed
+  file into `.firepit/inbox/processed/`. Same outcome if you just type
+  "verarbeite Inbox" — the tools are visible to Claude either way. Use
+  Ctrl+C in the terminal to bail mid-walk.
+- **Two-tier inbox badges.** The tab-header badge now tracks
+  *new since this tab was last activated* (notification semantic — clears
+  on activation), while the toolbar Inbox button tracks
+  *total un-processed* (state semantic — only clears as Claude completes
+  messages). Replaces the previous single badge that conflated both and
+  refused to clear when clicked.
+
+### Changed
+
+- The tab-header inbox badge no longer launches Explorer when clicked —
+  the badge is purely visual now; clicking the tab (or anywhere on its
+  header, including the badge) activates it and clears the badge.
+
 ## [0.5.14] — 2026-05-17
 
 ### Fixed

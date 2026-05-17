@@ -25,6 +25,22 @@ public sealed record InboxWriteResult(
     string? Path = null,
     string? Message = null);
 
+/// <summary>
+/// One pending inbox message as returned by firepit_inbox_list. <see cref="Id"/>
+/// is the filename (no path) — agents pass it back to firepit_inbox_complete.
+/// </summary>
+public sealed record InboxMessage(
+    string Id,
+    string? From,
+    string? Subject,
+    string? Priority,
+    string? Date,
+    string Body);
+
+public sealed record InboxListResult(
+    string Project,
+    IReadOnlyList<InboxMessage> Messages);
+
 // Resource definition returned by resources/list. Tool definitions live as
 // internal records next to the catalog (McpToolDefinitionRaw) — they carry
 // the inline JSON schema string rather than a parsed JsonElement.

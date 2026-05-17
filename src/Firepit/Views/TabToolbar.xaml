@@ -71,6 +71,34 @@
                 </StackPanel>
             </Button>
             <Border DockPanel.Dock="Left" Width="1" Margin="6,4" Background="#332B22" />
+            <!-- Inbox button: always visible, disabled when empty. Counter
+                 shows pending unprocessed messages (files in .firepit/inbox/).
+                 Click opens a modal that asks Claude to process all of them
+                 via the firepit_inbox_list / firepit_inbox_complete MCP
+                 tools. The tab-header InboxBadge tracks a different state
+                 ("new since this tab was last activated") and clears on
+                 activation; this counter only clears as Claude marks
+                 messages done. -->
+            <Button x:Name="InboxButton"
+                    DockPanel.Dock="Left"
+                    ToolTip="Process inbox messages with Claude"
+                    Style="{StaticResource ToolbarIconButton}"
+                    IsEnabled="False"
+                    Click="OnInboxClick">
+                <StackPanel Orientation="Horizontal">
+                    <Path Data="{StaticResource IconMail}"
+                          Stroke="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}"
+                          StrokeThickness="1.2"
+                          StrokeLineJoin="Round"
+                          Width="14" Height="14"
+                          Margin="0,0,7,0"
+                          VerticalAlignment="Center" />
+                    <TextBlock x:Name="InboxLabel"
+                               Text="Inbox"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Border DockPanel.Dock="Left" Width="1" Margin="6,4" Background="#332B22" />
             <Button DockPanel.Dock="Left"
                     ToolTip="Open in Explorer"
                     Style="{StaticResource ToolbarIconButton}"

@@ -138,6 +138,132 @@ public partial class MainWindow : IMcpBackend
             return new ToolCallResult(true, $"Reloaded {projectName} (quick-links applied; banner if restart needed)");
         });
 
+    public Task<InboxListResult> ListInboxAsync(string projectName) =>
+        OnDispatcherAsync(() =>
+        {
+            var project = FindProjectByName(projectName);
+            if (project is null)
+            {
+                return new InboxListResult(projectName, Array.Empty<InboxMessage>());
+            }
+
+            var inboxDir = Path.Combine(project.Path, ".firepit", "inbox");
+            if (!Directory.Exists(inboxDir))
+            {
+                return new InboxListResult(project.Name, Array.Empty<InboxMessage>());
+            }
+
+            var messages = new List<InboxMessage>();
+            foreach (var file in Directory.EnumerateFiles(inboxDir, "*.md", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    var raw = File.ReadAllText(file);
+                    var parsed = ParseFrontmatter(raw);
+                    messages.Add(new InboxMessage(
+                        Id:       Path.GetFileName(file),
+                        From:     parsed.frontmatter.GetValueOrDefault("from"),
+                        Subject:  parsed.frontmatter.GetValueOrDefault("subject"),
+                        Priority: parsed.frontmatter.GetValueOrDefault("priority"),
+                        Date:     parsed.frontmatter.GetValueOrDefault("date"),
+                        Body:     parsed.body));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Inbox list: couldn't read {File}", file);
+                }
+            }
+            // Stable order — by filename, which starts with an ISO date in
+            // the firepit-mcp send_to convention, so newest sorts naturally.
+            messages.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+            return new InboxListResult(project.Name, messages);
+        });
+
+    public Task<ToolCallResult> CompleteInboxAsync(string projectName, string id) =>
+        OnDispatcherAsync(() =>
+        {
+            var project = FindProjectByName(projectName);
+            if (project is null) return new ToolCallResult(false, $"Unknown project: {projectName}");
+
+            // Guard against path traversal in the id — only accept a bare filename.
+            if (id.Contains('/') || id.Contains('\\') || id.Contains("..", StringComparison.Ordinal))
+            {
+                return new ToolCallResult(false, $"Invalid id (must be a bare filename): {id}");
+            }
+
+            var inboxDir     = Path.Combine(project.Path, ".firepit", "inbox");
+            var processedDir = Path.Combine(inboxDir, "processed");
+            var source       = Path.Combine(inboxDir, id);
+            var target       = Path.Combine(processedDir, id);
+
+            if (!File.Exists(source))
+            {
+                return new ToolCallResult(false, $"No such message: {id}");
+            }
+
+            try
+            {
+                Directory.CreateDirectory(processedDir);
+                // If a same-named processed file already exists (rare — same id
+                // re-sent), append a -<timestamp> suffix rather than overwrite.
+                if (File.Exists(target))
+                {
+                    var stamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff");
+                    var ext   = Path.GetExtension(id);
+                    var stem  = Path.GetFileNameWithoutExtension(id);
+                    target    = Path.Combine(processedDir, $"{stem}-{stamp}{ext}");
+                }
+                File.Move(source, target);
+                Log.Information("Inbox: completed {Id} for {Project} → {Target}", id, project.Name, target);
+                return new ToolCallResult(true, $"Moved to processed: {Path.GetFileName(target)}");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Inbox complete failed for {Id} in {Project}", id, project.Name);
+                return new ToolCallResult(false, ex.Message);
+            }
+        });
+
+    /// <summary>
+    /// Tiny YAML-frontmatter parser. Accepts the firepit_send_to format —
+    /// <c>---\nkey: value\nkey: value\n---\n\nbody</c> — plus the looser legacy
+    /// shape (no frontmatter at all). Values are trimmed; nested structures
+    /// aren't supported because Firepit only emits flat key/value pairs.
+    /// </summary>
+    private static (Dictionary<string, string> frontmatter, string body) ParseFrontmatter(string raw)
+    {
+        var fm = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!raw.StartsWith("---", StringComparison.Ordinal))
+        {
+            return (fm, raw);
+        }
+        var lines = raw.Split('\n');
+        var endIdx = -1;
+        for (var i = 1; i < lines.Length; i++)
+        {
+            if (lines[i].TrimEnd('\r') == "---") { endIdx = i; break; }
+        }
+        if (endIdx < 0) return (fm, raw);
+
+        for (var i = 1; i < endIdx; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            var sep  = line.IndexOf(':');
+            if (sep <= 0) continue;
+            var key = line[..sep].Trim();
+            var val = line[(sep + 1)..].Trim();
+            if (key.Length > 0) fm[key] = val;
+        }
+        // Skip endIdx line itself, then strip a single leading blank line.
+        var bodyStart = endIdx + 1;
+        if (bodyStart < lines.Length && string.IsNullOrWhiteSpace(lines[bodyStart].TrimEnd('\r')))
+        {
+            bodyStart++;
+        }
+        var body = string.Join('\n', lines.Skip(bodyStart));
+        return (fm, body);
+    }
+
     public Task<InboxWriteResult> SendInboxAsync(string fromProject, string toProject,
                                                  string subject, string body, string priority) =>
         OnDispatcherAsync(() =>

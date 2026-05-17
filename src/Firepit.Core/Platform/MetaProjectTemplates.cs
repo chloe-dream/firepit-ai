@@ -24,6 +24,8 @@ You're Claude Code running inside it. Firepit's MCP server is registered for thi
 - `firepit_close_tab(projectName)` — close it (kills the agent)
 - `firepit_reload(projectName, restart?)` — re-read `<project>/.firepit/config.json` and apply
 - `firepit_send_to(toProject, subject, body, priority?)` — drop a markdown note in another project's `.firepit/inbox/`
+- `firepit_inbox_list(projectName?)` — list pending messages in a project's inbox (defaults to your own)
+- `firepit_inbox_complete(id, projectName?)` — mark a message as processed (moves it to `inbox/processed/`)
 
 Resources you can read:
 
@@ -85,7 +87,7 @@ See `CLAUDE.md` for the full surface.
 
 ## Inbox
 
-When another project's Claude pings you (`firepit_send_to`), the message lands in `.firepit/inbox/`. Move processed items to `.firepit/inbox/processed/` so you can see what's still pending.
+When another project's Claude pings you (`firepit_send_to`), the message lands in `.firepit/inbox/`. From v0.5.15 the Firepit toolbar has an **Inbox** button per tab — click it to hand the whole queue to Claude (or just type "verarbeite Inbox" and Claude picks them up via `firepit_inbox_list` / `firepit_inbox_complete`). Processed messages move to `.firepit/inbox/processed/`.
 
 ## Notes
 

@@ -766,12 +766,18 @@ public partial class MainWindow : Window
         try
         {
             var watcher = new InboxWatcher(projectPath);
-            watcher.UnreadCountChanged += (_, count) =>
-                Dispatcher.InvokeAsync(() => session.SetInboxBadge(count, OpenInboxOnClick(projectPath)));
+            // Two distinct UI surfaces:
+            //   - Tab-header badge ⇐ NewSinceSeen   ("arrived while away")
+            //   - Toolbar button   ⇐ Unpending      ("not yet processed")
+            watcher.NewSinceSeenCountChanged += (_, count) =>
+                Dispatcher.InvokeAsync(() => session.SetInboxBadge(count));
+            watcher.UnpendingCountChanged += (_, count) =>
+                Dispatcher.InvokeAsync(() => session.SetInboxToolbarCount(count));
             _inboxWatchers[projectPath] = watcher;
-            // Apply initial count synchronously so an existing inbox shows up
+            // Apply initial counts synchronously so an existing inbox shows up
             // without waiting for a filesystem event.
-            session.SetInboxBadge(watcher.UnreadCount, OpenInboxOnClick(projectPath));
+            session.SetInboxBadge(watcher.NewSinceSeenCount);
+            session.SetInboxToolbarCount(watcher.UnpendingCount);
         }
         catch (Exception ex)
         {
@@ -842,28 +848,12 @@ public partial class MainWindow : Window
             }
         };
 
-    private static MouseButtonEventHandler OpenInboxOnClick(string projectPath) =>
-        (_, _) =>
-        {
-            try
-            {
-                var inboxPath = System.IO.Path.Combine(projectPath, ".firepit", "inbox");
-                if (!System.IO.Directory.Exists(inboxPath))
-                {
-                    System.IO.Directory.CreateDirectory(inboxPath);
-                }
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "explorer.exe",
-                    Arguments = $"\"{inboxPath}\"",
-                    UseShellExecute = true,
-                });
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Could not open inbox folder");
-            }
-        };
+    // (OpenInboxOnClick removed — v0.5.15 replaced the "click badge → opens
+    // Explorer, badge stays" UX with two-tier semantics: clicking the
+    // tab-header badge implicitly activates the tab (header click selects
+    // tab → OnTabSelectionChanged → InboxWatcher.MarkAsSeen → badge clears),
+    // and a separate always-visible Inbox toolbar button is the entry point
+    // for "process pending messages with Claude".)
 
     private void OnTabSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -879,6 +869,14 @@ public partial class MainWindow : Window
             }
             TabContentHost.Visibility = Visibility.Visible;
             EmptyState.Visibility = Visibility.Collapsed;
+
+            // Tab is now active → clear the "new since seen" badge. The
+            // unpending count (toolbar button) is untouched — only Claude
+            // calling firepit_inbox_complete reduces that.
+            if (_inboxWatchers.TryGetValue(session.Context.Path, out var inbox))
+            {
+                inbox.MarkAsSeen();
+            }
 
             // Deferred-restore path: a tab that was created on app start but
             // not eagerly initialized lights up here, the moment the user

@@ -26,8 +26,37 @@ public partial class TabToolbar : UserControl
     /// launch elevated (run as administrator).</summary>
     public event EventHandler<bool>? ShellRequested;
     public event EventHandler? ConfigureRequested;
+    /// <summary>Raised when the user clicks the always-visible Inbox toolbar
+    /// button. SessionTab owns the modal-confirm + PTY-paste flow; the toolbar
+    /// only signals intent.</summary>
+    public event EventHandler? InboxRequested;
     public event EventHandler<ResolvedQuickLink>? QuickLinkClicked;
     public event EventHandler<ProjectCommand>? CommandClicked;
+
+    /// <summary>
+    /// Update the Inbox toolbar button. Count==0 → label collapses to "Inbox"
+    /// and the button greys out (still visible — discoverable). Count&gt;0 →
+    /// label becomes "Inbox (N)" and the button becomes clickable.
+    /// </summary>
+    public void SetInboxCount(int count)
+    {
+        if (count <= 0)
+        {
+            InboxLabel.Text = "Inbox";
+            InboxButton.IsEnabled = false;
+            InboxButton.ToolTip = "Inbox is empty";
+        }
+        else
+        {
+            InboxLabel.Text = $"Inbox ({count})";
+            InboxButton.IsEnabled = true;
+            InboxButton.ToolTip = count == 1
+                ? "Process the pending inbox message with Claude"
+                : $"Process {count} pending inbox messages with Claude";
+        }
+    }
+
+    private void OnInboxClick(object sender, RoutedEventArgs e) => InboxRequested?.Invoke(this, EventArgs.Empty);
 
     public void SetCommands(IReadOnlyList<ProjectCommand> commands)
     {

@@ -3,10 +3,20 @@ using System.IO;
 namespace Firepit.Core.Inbox;
 
 /// <summary>
-/// Watches <c>&lt;projectPath&gt;/.firepit/inbox/*.md</c> and reports the
-/// current unread count (top-level only — files moved to
-/// <c>inbox/processed/</c> stop counting). Marshals nothing — consumers
-/// hop dispatchers themselves if they touch UI.
+/// Watches <c>&lt;projectPath&gt;/.firepit/inbox/*.md</c> and surfaces two
+/// distinct counts:
+///
+/// <list type="bullet">
+///   <item><b>UnpendingCount</b> — every top-level <c>.md</c> file currently
+///   sitting in the inbox folder. Files moved to <c>inbox/processed/</c>
+///   stop counting. Drives the always-on toolbar Inbox button.</item>
+///   <item><b>NewSinceSeenCount</b> — the subset of those files whose last-write
+///   time is newer than the last <see cref="MarkAsSeen"/> call. Drives the
+///   tab-header notification badge — "arrived while you were on another tab."
+///   Resets to 0 when the user activates the tab.</item>
+/// </list>
+///
+/// Marshals nothing — consumers hop dispatchers themselves if they touch UI.
 /// </summary>
 public sealed class InboxWatcher : IDisposable
 {
@@ -15,6 +25,7 @@ public sealed class InboxWatcher : IDisposable
 
     private readonly string _inboxPath;
     private readonly FileSystemWatcher? _fsw;
+    private DateTime _seenAt = DateTime.UtcNow;
     private bool _disposed;
 
     public InboxWatcher(string projectPath)
@@ -45,26 +56,80 @@ public sealed class InboxWatcher : IDisposable
         Refresh();
     }
 
-    public string ProjectPath { get; }
-    public string InboxPath   => _inboxPath;
-    public int    UnreadCount { get; private set; }
+    public string ProjectPath        { get; }
+    public string InboxPath          => _inboxPath;
 
+    /// <summary>Total un-processed messages (drives the toolbar badge).</summary>
+    public int    UnpendingCount     { get; private set; }
+
+    /// <summary>Un-processed messages newer than the last <see cref="MarkAsSeen"/>
+    /// (drives the tab-header notification badge).</summary>
+    public int    NewSinceSeenCount  { get; private set; }
+
+    /// <summary>Backwards-compat alias — equivalent to <see cref="UnpendingCount"/>.
+    /// Kept so callers that haven't migrated to the split model still compile.</summary>
+    public int    UnreadCount        => UnpendingCount;
+
+    public event EventHandler<int>? UnpendingCountChanged;
+    public event EventHandler<int>? NewSinceSeenCountChanged;
+
+    /// <summary>Backwards-compat alias — fires alongside <see cref="UnpendingCountChanged"/>.</summary>
     public event EventHandler<int>? UnreadCountChanged;
+
+    /// <summary>
+    /// Called when the tab is activated. Treats everything currently in the
+    /// inbox as "seen" — the new-counter snaps to zero and stays there until
+    /// a fresh file arrives (mtime > now). The unpending counter is untouched
+    /// because the user hasn't actually <i>processed</i> anything yet.
+    /// </summary>
+    public void MarkAsSeen()
+    {
+        _seenAt = DateTime.UtcNow;
+        if (NewSinceSeenCount != 0)
+        {
+            NewSinceSeenCount = 0;
+            NewSinceSeenCountChanged?.Invoke(this, 0);
+        }
+    }
 
     public void Refresh()
     {
         try
         {
-            var count = Directory.Exists(_inboxPath)
-                ? Directory.EnumerateFiles(_inboxPath, "*.md", SearchOption.TopDirectoryOnly).Count()
-                : 0;
-            if (count == UnreadCount) return;
-            UnreadCount = count;
-            UnreadCountChanged?.Invoke(this, count);
+            int unpending = 0;
+            int newSince = 0;
+            if (Directory.Exists(_inboxPath))
+            {
+                foreach (var path in Directory.EnumerateFiles(_inboxPath, "*.md", SearchOption.TopDirectoryOnly))
+                {
+                    unpending++;
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(path) > _seenAt) newSince++;
+                    }
+                    catch
+                    {
+                        // Race with Move/Delete — count it as "new" rather than skip.
+                        newSince++;
+                    }
+                }
+            }
+
+            if (unpending != UnpendingCount)
+            {
+                UnpendingCount = unpending;
+                UnpendingCountChanged?.Invoke(this, unpending);
+                UnreadCountChanged?.Invoke(this, unpending);
+            }
+            if (newSince != NewSinceSeenCount)
+            {
+                NewSinceSeenCount = newSince;
+                NewSinceSeenCountChanged?.Invoke(this, newSince);
+            }
         }
         catch
         {
-            // Transient IO failure — leave count alone, retry on next event.
+            // Transient IO failure — leave counts alone, retry on next event.
         }
     }
 

@@ -282,6 +282,27 @@ public sealed class McpHost : IDisposable
                 var result = await _backend.ReloadAsync(project, restart);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
             }
+            case "firepit_inbox_list":
+            {
+                var project = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(project)) project = ctx.ProjectName;
+                if (string.IsNullOrEmpty(project))
+                    return BuildErrorResponse(id, -32602, "missing 'projectName' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var result = await _backend.ListInboxAsync(project);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.InboxListResult)));
+            }
+            case "firepit_inbox_complete":
+            {
+                var messageId = args["id"]?.GetValue<string>();
+                var project   = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(project)) project = ctx.ProjectName;
+                if (string.IsNullOrEmpty(messageId))
+                    return BuildErrorResponse(id, -32602, "missing 'id'");
+                if (string.IsNullOrEmpty(project))
+                    return BuildErrorResponse(id, -32602, "missing 'projectName' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var result = await _backend.CompleteInboxAsync(project, messageId);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
+            }
             case "firepit_send_to":
             {
                 var fromProject = !string.IsNullOrEmpty(ctx.ProjectName) ? ctx.ProjectName : null;

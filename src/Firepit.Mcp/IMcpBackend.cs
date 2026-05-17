@@ -22,4 +22,13 @@ public interface IMcpBackend
     /// <summary>Phase 5: write an inbox file under &lt;toProject&gt;/.firepit/inbox/.</summary>
     Task<InboxWriteResult>            SendInboxAsync(string fromProject, string toProject,
                                                      string subject, string body, string priority);
+
+    /// <summary>List pending (un-processed) inbox messages for a project — top-level
+    /// .md files under &lt;projectPath&gt;/.firepit/inbox/, with frontmatter parsed.</summary>
+    Task<InboxListResult>             ListInboxAsync(string projectName);
+
+    /// <summary>Move one inbox message from &lt;projectPath&gt;/.firepit/inbox/&lt;id&gt;
+    /// into the sibling processed/ subfolder. Idempotent — already-processed
+    /// (or missing) files return Ok=false with a Message.</summary>
+    Task<ToolCallResult>              CompleteInboxAsync(string projectName, string id);
 }
