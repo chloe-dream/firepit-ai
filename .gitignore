@@ -45,6 +45,10 @@ logs/
 .env
 .env.local
 
+# Per-user briefing inbox — ephemeral notes between user and the
+# in-tab Claude, never meant to be checked in (Phase 5 inbox design).
+.firepit/inbox/
+
 # Test results
 TestResults/
 *.trx
