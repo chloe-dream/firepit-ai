@@ -60,6 +60,13 @@ public class McpRegistryTests
         Assert.Equal("C:/custom/firepit-mcp.exe", registry.Find("firepit")!.Command);
     }
 
+    // v0.5.20: the built-in firepit MCP server is now implicit in
+    // ResolveForProject too — Inbox button / firepit_send_to / firepit_*
+    // tools work out of the box in every project. Filter it out in tests
+    // that only care about user-declared servers.
+    private static ResolvedMcpServer[] NonFirepit(IEnumerable<ResolvedMcpServer> resolved)
+        => resolved.Where(s => s.Id != "firepit").ToArray();
+
     [Fact]
     public void ResolveForProject_UnknownActivationViaProjectConfigCallsWarn()
     {
@@ -82,7 +89,9 @@ public class McpRegistryTests
             warn: msg => warnings.Add(msg));
 
         var resolved = registry.ResolveForProject(Ctx(@"D:\p"));
-        Assert.Empty(resolved);
+        // Unknown activation dropped + warned; built-in firepit still projected.
+        var nonFirepit = NonFirepit(resolved);
+        Assert.Empty(nonFirepit);
         Assert.Contains(warnings, w => w.Contains("nope-not-registered"));
     }
 
@@ -102,7 +111,7 @@ public class McpRegistryTests
 
         var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
         var resolved = registry.ResolveForProject(Ctx(@"D:\p"));
-        var server = Assert.Single(resolved);
+        var server = Assert.Single(NonFirepit(resolved));
         Assert.Equal("fishbowl", server.Id);
         Assert.Equal("https://localhost:7180/mcp", server.Url);
     }
@@ -133,7 +142,7 @@ public class McpRegistryTests
             ]);
 
         var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
-        var server = Assert.Single(registry.ResolveForProject(Ctx(@"D:\p")));
+        var server = Assert.Single(NonFirepit(registry.ResolveForProject(Ctx(@"D:\p"))));
         Assert.Equal("yes", server.Headers["X-Default"]);
         Assert.Equal("p",   server.Headers["X-Project"]);
     }
@@ -158,7 +167,7 @@ public class McpRegistryTests
             ]);
 
         var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
-        var server = Assert.Single(registry.ResolveForProject(Ctx(@"D:\p")));
+        var server = Assert.Single(NonFirepit(registry.ResolveForProject(Ctx(@"D:\p"))));
         Assert.NotEmpty(server.ResolutionWarnings);
         Assert.Contains(server.ResolutionWarnings, w => w.Contains("DEFINITELY_NOT_SET_12345"));
     }
@@ -189,8 +198,45 @@ public class McpRegistryTests
             ]);
 
         var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
-        var server = Assert.Single(registry.ResolveForProject(Ctx(@"D:\p")));
+        var server = Assert.Single(NonFirepit(registry.ResolveForProject(Ctx(@"D:\p"))));
         Assert.False(server.Environment.ContainsKey("LEGACY_VAR"));
+    }
+
+    [Fact]
+    public void ResolveForProject_AlwaysIncludesFirepitBuiltIn()
+    {
+        // Even with no activations at all, the built-in firepit server is
+        // projected so toolbar features like the Inbox button work out of
+        // the box (v0.5.20).
+        var settings = WithMcp(new());
+        var registry = new SettingsBackedMcpRegistry(settings, new EnvironmentSecretProvider());
+        var resolved = registry.ResolveForProject(Ctx(@"D:\p"));
+        var firepit = Assert.Single(resolved);
+        Assert.Equal("firepit", firepit.Id);
+    }
+
+    [Fact]
+    public void ResolveForProject_ExplicitFirepitActivationIsNotDuplicated()
+    {
+        // A user who lists { "id": "firepit" } in mcpActivations (e.g. to
+        // pass envOverrides) wins — the implicit add is suppressed so the
+        // server appears only once.
+        var settings = WithMcp(new());
+        var registry = new SettingsBackedMcpRegistry(
+            settings,
+            new EnvironmentSecretProvider(),
+            projectConfigLoader: _ => new Firepit.Core.ProjectConfig.ProjectConfig(
+                Version: 1,
+                McpActivations:
+                [
+                    new Firepit.Core.ProjectConfig.ProjectMcpActivation(
+                        Id: "firepit",
+                        EnvOverrides: new Dictionary<string, string?> { ["MY_ENV"] = "set" }),
+                ]));
+        var resolved = registry.ResolveForProject(Ctx(@"D:\p"));
+        var firepit = Assert.Single(resolved);
+        Assert.Equal("firepit", firepit.Id);
+        Assert.Equal("set", firepit.Environment["MY_ENV"]);
     }
 
     [Fact]

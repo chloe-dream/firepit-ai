@@ -81,25 +81,43 @@ public sealed class SettingsBackedMcpRegistry : IMcpRegistry
         // legacy entries should be stripped, but we keep the fallback so a
         // hand-edited settings.json continues to work during the transition.
         var projectConfig = _projectConfigLoader?.Invoke(context.Path);
+        IReadOnlyList<ResolvedMcpServer> resolved;
         if (projectConfig?.McpActivations is { Count: > 0 } activations)
         {
-            return ResolveActivations(activations);
+            resolved = ResolveActivations(activations);
         }
-
-        if (!_legacyProjectActivations.TryGetValue(context.Path, out var activation))
+        else if (_legacyProjectActivations.TryGetValue(context.Path, out var activation))
         {
-            return [];
-        }
-
-        var resolved = new List<ResolvedMcpServer>(activation.Active.Count);
-        foreach (var id in activation.Active)
-        {
-            if (!_byId.TryGetValue(id, out var entry))
+            var list = new List<ResolvedMcpServer>(activation.Active.Count);
+            foreach (var id in activation.Active)
             {
-                continue;
+                if (!_byId.TryGetValue(id, out var entry))
+                {
+                    continue;
+                }
+                activation.Overrides.TryGetValue(id, out var overrideEntry);
+                list.Add(Resolve(entry, overrideEntry));
             }
-            activation.Overrides.TryGetValue(id, out var overrideEntry);
-            resolved.Add(Resolve(entry, overrideEntry));
+            resolved = list;
+        }
+        else
+        {
+            resolved = [];
+        }
+
+        // The Firepit built-in MCP server powers core product features
+        // (toolbar Inbox button, firepit_send_to cross-project messaging,
+        // tab control). Activating it per-project would mean every new
+        // project needs an opt-in step before those buttons work — the
+        // Inbox button in particular looked broken because the spawned
+        // Claude session had no firepit_inbox_* tools. v0.5.20 makes it
+        // implicit; users who explicitly list { "id": "firepit", ... } in
+        // mcpActivations to pass overrides win (dedup by id below).
+        if (_byId.TryGetValue(BuiltInFirepitId, out var firepitEntry)
+            && !resolved.Any(r => string.Equals(r.Id, BuiltInFirepitId, StringComparison.Ordinal)))
+        {
+            var implicitFirepit = Resolve(firepitEntry, null);
+            return [implicitFirepit, .. resolved];
         }
         return resolved;
     }

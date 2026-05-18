@@ -5,6 +5,40 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.20] — 2026-05-18
+
+### Fixed
+
+- **MCP `firepit_*` tools are now always available** (issue #11 followup).
+  The built-in Firepit MCP server (Inbox, `firepit_send_to`, project
+  control) used to require an explicit `mcpActivations: [{ "id":
+  "firepit" }]` entry in each project's `.firepit/config.json` — without
+  it the spawned Claude session had 0 firepit tools and the toolbar
+  Inbox button produced a prompt no agent could fulfil. The built-in
+  is now implicitly projected for every project. Users who list it
+  explicitly (e.g. to pass `envOverrides`) win — no duplicate spawn.
+- **Drag-and-drop images from clipboard / Snipping Tool / browser** now
+  work. `FileDropTarget` accepted only `CF_HDROP` (Explorer files);
+  in-memory bitmaps (`CF_DIB`) were silently rejected. v0.5.20 adds
+  CF_DIB support: the DIB is wrapped as BMP, decoded through WPF
+  imaging, persisted as PNG to `%LOCALAPPDATA%\Firepit\dragdrop\` and
+  the path is pasted into the terminal just like a real file drop.
+  Claude Code sees a normal file path it can read.
+- **Tab resume reliability.** Restored tabs that weren't the active
+  tab were losing their `--continue` flag on every restart — a
+  SelectionChanged race during the tab-restore loop start-and-cancelled
+  deferred sessions once, consuming the sidecar `_deferredResume`
+  dictionary entry. Clicking the tab later then opened a fresh session
+  with no agent-history continuity.
+  - `PendingResume` flag now lives on `SessionTab` itself, not in a
+    MainWindow dictionary — survives any number of phantom cancel /
+    restart cycles.
+  - Cancelled `StartSessionAsync` resets `_initialized` and notifies
+    Dead, so the tab can actually be retried instead of staying frozen
+    in Igniting.
+  - New `SessionTab.RestartIfPending()` is the idempotent wake entry
+    point used by both tab-selection and project-list clicks.
+
 ## [0.5.19] — 2026-05-18
 
 ### Fixed

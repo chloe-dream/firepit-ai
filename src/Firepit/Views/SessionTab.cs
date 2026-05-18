@@ -383,6 +383,53 @@ public sealed class SessionTab : IAsyncDisposable
     public Task EnsureInitializedAsync(bool resume) => StartSessionAsync(resume);
 
     /// <summary>
+    /// Pending resume flag for restored-but-not-yet-started tabs. Lives on
+    /// SessionTab itself (rather than a sidecar dictionary on MainWindow) so
+    /// it survives spurious cancellations and tab-list reshuffles —
+    /// previously a phantom SelectionChanged race during restore could
+    /// start-and-cancel a deferred tab once, consume its sidecar flag, and
+    /// leave the user with a fresh (no <c>--continue</c>) session on the
+    /// next real click. The starter clears this flag only after the session
+    /// is actually started (see <see cref="RestartIfPending"/>).
+    /// </summary>
+    public bool PendingResume { get; set; }
+
+    /// <summary>
+    /// Idempotent "wake the deferred tab" entry point. Called by the
+    /// tab-selection handler. If the session has never started, starts it
+    /// honouring <see cref="PendingResume"/>. If a previous start cancelled
+    /// (state is Dead from the cancel-catch's NotifyExited), re-attempts
+    /// the same resume flag — this is what makes clicking a restored tab
+    /// reliably get <c>--continue</c> even after a phantom cancel.
+    /// </summary>
+    public async Task RestartIfPending()
+    {
+        if (_disposed) return;
+        var needsStart = !_initialized
+                          || _detector.State == SessionState.Dead
+                          || _detector.State == SessionState.Cold;
+        if (!needsStart) return;
+
+        var resume = PendingResume;
+        if (_initialized)
+        {
+            // Dead/Cold state from a prior cancelled attempt — tear down the
+            // half-built bits before retrying so StartSessionAsync's early
+            // return guard doesn't keep us stuck.
+            await TeardownSessionAsync();
+        }
+        await StartSessionAsync(resume);
+
+        // Only clear after the start actually got past _cts creation. If
+        // StartSessionAsync immediately threw, PendingResume stays set and
+        // the next click retries.
+        if (_initialized)
+        {
+            PendingResume = false;
+        }
+    }
+
+    /// <summary>
     /// Hand focus to the embedded terminal so the user can type immediately
     /// (no click needed). Safe to call before WebView2 is ready — the inner
     /// xterm focus message is best-effort and silently no-ops if the bridge
@@ -528,6 +575,13 @@ public sealed class SessionTab : IAsyncDisposable
         catch (OperationCanceledException)
         {
             Log.Information("Session start cancelled for {Project}", Context.Name);
+            // Without this reset the tab gets stuck in Igniting forever: the
+            // next StartSessionAsync early-returns (because _initialized is
+            // true and state isn't Dead/Cold), and clicking the tab again
+            // does nothing. NotifyExited transitions to Dead so a retry
+            // through RestartIfPending or Rekindle can take.
+            _initialized = false;
+            _detector.NotifyExited();
         }
         catch (Exception ex)
         {

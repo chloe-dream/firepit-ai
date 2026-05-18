@@ -48,9 +48,6 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, InboxWatcher> _inboxWatchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RunsWatcher> _runsWatchers = new(StringComparer.OrdinalIgnoreCase);
     private JobScheduler? _jobScheduler;
-    // Resume flag for tabs that were restored but haven't been activated yet.
-    // Cleared when the deferred tab is activated for the first time.
-    private readonly Dictionary<string, bool> _deferredResume = new(StringComparer.OrdinalIgnoreCase);
     private int _pendingMigrationCount;
 
     // True while RestoreTabsFromState is mid-loop. Suppresses StartDeferredTab
@@ -481,23 +478,19 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Start a deferred-restore tab's session if it hasn't been started yet.
-    /// Safe to call repeatedly — the <see cref="_deferredResume"/> entry is the
-    /// single-shot guard, removed on first start. Returns true if this call
-    /// kicked off the start.
+    /// Wake a deferred-restore tab. Resume flag lives on the SessionTab
+    /// itself (<see cref="SessionTab.PendingResume"/>), so this is now a
+    /// thin pass-through to the tab's own RestartIfPending — which is
+    /// resilient to phantom cancel-restart cycles (the bug v0.5.20 nails
+    /// shut). Returns true if a start was attempted.
     /// </summary>
     private bool StartDeferredTab(SessionTab session)
     {
-        if (session.IsStarted)
+        if (session.IsStarted && session.State != Firepit.Core.Sessions.SessionState.Dead)
         {
             return false;
         }
-        if (!_deferredResume.TryGetValue(session.Context.Path, out var resume))
-        {
-            return false;
-        }
-        _deferredResume.Remove(session.Context.Path);
-        StartSession(session, resume);
+        _ = session.RestartIfPending();
         return true;
     }
 
@@ -676,6 +669,14 @@ public partial class MainWindow : Window
         if (_openTabs.TryGetValue(project.Path, out var existing))
         {
             existing.TabItem.IsSelected = true;
+            // If the existing tab is a deferred-restore that hasn't actually
+            // started yet (or got stuck in a cancelled state), clicking it
+            // from the project list should wake it with its persisted resume
+            // flag — not silently switch to a dead tab.
+            if (!existing.Session.IsStarted || existing.Session.State == Firepit.Core.Sessions.SessionState.Dead)
+            {
+                _ = existing.Session.RestartIfPending();
+            }
             return;
         }
         AddSessionTab(project, resume, deferred: false);
@@ -731,9 +732,10 @@ public partial class MainWindow : Window
 
         if (deferred)
         {
-            // Remember the resume flag — OnTabSelectionChanged consumes it the
-            // first time this tab is activated.
-            _deferredResume[project.Path] = resume;
+            // Resume flag travels with the tab, not in a sidecar dict —
+            // survives the SelectionChanged race that used to lose --continue
+            // on every restored non-active tab.
+            session.PendingResume = resume;
         }
         else
         {
@@ -1031,7 +1033,6 @@ public partial class MainWindow : Window
         if (key is not null)
         {
             _openTabs.Remove(key);
-            _deferredResume.Remove(key);
             DisposeConfigWatcher(key);
             DisposeInboxWatcher(key);
             DisposeRunsWatcher(key);
