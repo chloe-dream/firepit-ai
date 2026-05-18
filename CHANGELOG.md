@@ -5,6 +5,24 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.19] — 2026-05-18
+
+### Fixed
+
+- **Inbox button polish.** Three small bugs in the v0.5.15 toolbar Inbox
+  flow that bit during daily use:
+  - Modal title, body, button labels and the prompt handed to Claude
+    are now English, matching the rest of the app. They were German by
+    accident (author's working language) and stuck out in an otherwise
+    English-only product.
+  - The prompt is now submitted with `\r` (CR) instead of `\n` (LF).
+    Claude Code's TUI treats LF as a newline inside the input buffer
+    and CR as submit — so the prompt now starts running immediately
+    instead of sitting in the input waiting for the user to hit Enter.
+  - Focus is handed back to the terminal after the prompt is sent.
+    Previously focus stayed on the Inbox toolbar button, so the user's
+    Enter (to submit) re-triggered the button and re-opened the modal.
+
 ## [0.5.18] — 2026-05-18
 
 ### Added

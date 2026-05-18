@@ -300,28 +300,33 @@ public sealed class SessionTab : IAsyncDisposable
 
         var ownerWin = Window.GetWindow(_content);
         var n = _unprocessedInboxCount;
-        var noun = n == 1 ? "Nachricht" : "Nachrichten";
+        var noun = n == 1 ? "message" : "messages";
         var confirmed = MessageDialog.Show(
             ownerWin,
-            title: $"Inbox abarbeiten ({n} {noun})?",
-            message: $"Es liegen {n} unbearbeitete {noun} in der Inbox. " +
-                     "Wenn du fortfährst, übergibt Firepit alle an die laufende Claude-Session — Claude listet sie via firepit_inbox_list, " +
-                     "arbeitet sie nacheinander ab und markiert sie mit firepit_inbox_complete als erledigt. " +
-                     "Du kannst jederzeit mit Ctrl+C im Terminal abbrechen.",
-            primaryLabel: "Inbox abarbeiten",
-            secondaryLabel: "Abbrechen");
+            title: $"Process inbox ({n} {noun})?",
+            message: $"There {(n == 1 ? "is" : "are")} {n} unprocessed {noun} in the inbox. " +
+                     "Firepit will hand them all to the running Claude session — Claude lists them via firepit_inbox_list, " +
+                     "works through them one by one, and marks each done with firepit_inbox_complete. " +
+                     "Press Ctrl+C in the terminal to abort at any point.",
+            primaryLabel: "Process inbox",
+            secondaryLabel: "Cancel");
         if (!confirmed) return;
 
         const string prompt =
-            "Verarbeite jetzt alle ausstehenden Nachrichten in der Firepit-Inbox dieses Projekts. " +
-            "Schritt 1: rufe `firepit_inbox_list` auf. " +
-            "Schritt 2: arbeite jede Nachricht der Reihe nach ab — bei Aktion fragst du mich vorher, bei reiner Info reicht eine Zusammenfassung. " +
-            "Schritt 3: markiere jede abgearbeitete Nachricht via `firepit_inbox_complete` (id aus der Liste). " +
-            "Wenn die Liste leer ist, sage nur \"Inbox leer\" und stoppe.";
+            "Process all pending messages in this project's Firepit inbox. " +
+            "Step 1: call `firepit_inbox_list`. " +
+            "Step 2: work through each message in order — ask me before taking action; for pure-info messages a short summary is enough. " +
+            "Step 3: mark each processed message via `firepit_inbox_complete` (id from the list). " +
+            "If the list is empty, just say \"Inbox empty\" and stop.";
 
         try
         {
-            var bytes = System.Text.Encoding.UTF8.GetBytes(prompt + "\n");
+            // \r (CR) instead of \n: the Claude Code TUI treats LF as a
+            // newline inside the input buffer and CR as submit. Sending CR
+            // makes Claude pick up the prompt immediately instead of leaving
+            // it sitting in the input waiting for the user to press Enter
+            // (where the still-focused toolbar button would re-trigger).
+            var bytes = System.Text.Encoding.UTF8.GetBytes(prompt + "\r");
             _ = _ptyChannel.WriteAsync(bytes, _cts?.Token ?? CancellationToken.None);
             Log.Information("Inbox prompt sent to {Project} (queued {Count} messages)", Context.Name, n);
         }
@@ -329,6 +334,11 @@ public sealed class SessionTab : IAsyncDisposable
         {
             Log.Warning(ex, "Inbox prompt write failed for {Project}", Context.Name);
         }
+
+        // Hand focus back to the terminal so the next keystroke goes to
+        // Claude's input, not the still-focused Inbox toolbar button —
+        // pressing Enter on a re-focused button would re-open the dialog.
+        FocusTerminal();
     }
 
     /// <summary>
