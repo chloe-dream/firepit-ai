@@ -69,6 +69,7 @@ public sealed class SessionTab : IAsyncDisposable
     private IPtyChannel? _ptyChannel;
     private CancellationTokenSource? _cts;
     private readonly Firepit.Core.ProjectConfig.CommandsTrustLedger? _trustLedger;
+    private readonly CommandRunner _commandRunner;
     private bool _initialized;
     private bool _disposed;
 
@@ -96,6 +97,15 @@ public sealed class SessionTab : IAsyncDisposable
 
         _detector = new ActivityDetector(clock ?? new SystemActivityClock());
         _detector.StateChanged += OnStateChanged;
+
+        // CommandRunner emits state-change callbacks from arbitrary threads
+        // (Process.Exited fires on a worker). Marshal back to the UI dispatcher
+        // before touching the toolbar so we don't cross thread-affinity.
+        _commandRunner = new CommandRunner(() =>
+        {
+            if (_disposed) return;
+            _content?.Dispatcher.BeginInvoke(new Action(RefreshCommandRunningState));
+        });
 
         _statusText = new TextBlock
         {
@@ -125,8 +135,9 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.InboxRequested += (_, _) => OnInboxButtonClicked();
         _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
         _toolbar.CommandClicked += (_, cmd) => RunCommand(cmd);
+        _toolbar.CommandStopRequested += (_, cmd) => StopCommand(cmd);
         _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
-        _toolbar.SetCommands(initialConfig?.Commands ?? []);
+        _toolbar.SetCommands(initialConfig?.Commands ?? [], _commandRunner.IsAlive);
 
         _rekindleAffordance = BuildRekindleAffordance();
         _configRestartAffordance = BuildConfigRestartAffordance();
@@ -395,6 +406,7 @@ public sealed class SessionTab : IAsyncDisposable
 
         _detector.StateChanged -= OnStateChanged;
         _cts?.Dispose();
+        try { _commandRunner.Dispose(); } catch { /* ignored */ }
     }
 
     public async Task RekindleAsync(bool resume, bool confirmIfBurning)
@@ -820,76 +832,7 @@ public sealed class SessionTab : IAsyncDisposable
             switch (cmd.Type)
             {
                 case Firepit.Core.ProjectConfig.ProjectCommandType.Shell:
-                    if (string.IsNullOrEmpty(cmd.Command)) return;
-
-                    // Trust gate (issue #11). Shell commands can run arbitrary
-                    // code with user privileges — a cloned repo can ship
-                    // anything in .firepit/config.json. Prompt once per
-                    // (project, config-file-hash); any byte-level edit
-                    // invalidates the previous trust.
-                    if (_trustLedger is not null)
-                    {
-                        var hash = Firepit.Core.ProjectConfig.CommandsTrustLedger.HashConfigFile(Context.Path);
-                        if (hash is not null && !_trustLedger.IsTrusted(Context.Path, hash))
-                        {
-                            if (!PromptForCommandsTrust(hash)) return;
-                        }
-                    }
-
-                    // Confirm before state-changing commands (capture-on writes
-                    // the hosts file, db drops, deploys). The user marks them
-                    // with "confirm": true; modal cancel just no-ops.
-                    if (cmd.Confirm == true)
-                    {
-                        var owner = Window.GetWindow(_content);
-                        var argsPreview = cmd.Args is { Count: > 0 } a0 ? " " + string.Join(' ', a0) : string.Empty;
-                        var elevatedNote = cmd.Elevated == true ? " (as administrator)" : string.Empty;
-                        var ok = MessageDialog.Show(
-                            owner,
-                            title: $"Run '{cmd.Name}'?",
-                            message: $"This will execute:\n\n  {cmd.Command}{argsPreview}\n\nin {ResolveCwd(cmd)}{elevatedNote}.",
-                            primaryLabel: "Run",
-                            secondaryLabel: "Cancel");
-                        if (!ok) return;
-                    }
-
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = cmd.Command,
-                        Arguments = cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty,
-                        WorkingDirectory = ResolveCwd(cmd),
-                        UseShellExecute = true,
-                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
-                    };
-                    if (cmd.Elevated == true)
-                    {
-                        // Windows: triggers UAC; ERROR_CANCELLED if user declines.
-                        psi.Verb = "runas";
-                    }
-                    if (cmd.Env is { Count: > 0 } env)
-                    {
-                        // UseShellExecute=true means we can only seed extra env
-                        // vars via the ProcessStartInfo.Environment dictionary
-                        // before launch; nulls remove (matches mcpOverrides
-                        // semantics). Inheritance is automatic.
-                        foreach (var (k, v) in env)
-                        {
-                            if (v is null) psi.Environment.Remove(k);
-                            else            psi.Environment[k] = v;
-                        }
-                    }
-
-                    try
-                    {
-                        System.Diagnostics.Process.Start(psi);
-                        Log.Information("Ran shell command '{Name}' in {Path} (elevated={Elev}, env+={EnvCount})",
-                            cmd.Name, psi.WorkingDirectory, cmd.Elevated == true, cmd.Env?.Count ?? 0);
-                    }
-                    catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
-                    {
-                        // ERROR_CANCELLED — UAC declined. Treat as user choice.
-                        Log.Information("Shell command '{Name}' aborted at UAC prompt", cmd.Name);
-                    }
+                    RunShellCommand(cmd);
                     break;
                 case Firepit.Core.ProjectConfig.ProjectCommandType.ClaudePrompt:
                     if (string.IsNullOrEmpty(cmd.Prompt) || _ptyChannel is null) return;
@@ -912,6 +855,151 @@ public sealed class SessionTab : IAsyncDisposable
             Log.Warning(ex, "Command '{Name}' failed", cmd.Name);
             ShowFatal($"Command '{cmd.Name}' failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Right-click → "Stop". Kills the tracked process tree if alive.
+    /// </summary>
+    private void StopCommand(Firepit.Core.ProjectConfig.ProjectCommand cmd)
+    {
+        try
+        {
+            _commandRunner.Stop(cmd);
+            RefreshCommandRunningState();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Stop for command '{Name}' failed", cmd.Name);
+        }
+    }
+
+    /// <summary>
+    /// Re-render the toolbar so running-state indicators / Stop menu items
+    /// reflect the current CommandRunner state. Called when the runner emits
+    /// state-changed (Spawn / process Exited / explicit Stop).
+    /// </summary>
+    private void RefreshCommandRunningState()
+    {
+        if (_disposed) return;
+        _toolbar.SetCommands(_currentConfig?.Commands ?? [], _commandRunner.IsAlive);
+    }
+
+    private void RunShellCommand(Firepit.Core.ProjectConfig.ProjectCommand cmd)
+    {
+        if (string.IsNullOrEmpty(cmd.Command)) return;
+
+        // Trust gate (issue #11). Shell commands can run arbitrary code with
+        // user privileges — a cloned repo can ship anything in
+        // .firepit/config.json. Prompt once per (project, config-file-hash);
+        // any byte-level edit invalidates the previous trust.
+        if (_trustLedger is not null)
+        {
+            var hash = Firepit.Core.ProjectConfig.CommandsTrustLedger.HashConfigFile(Context.Path);
+            if (hash is not null && !_trustLedger.IsTrusted(Context.Path, hash))
+            {
+                if (!PromptForCommandsTrust(hash)) return;
+            }
+        }
+
+        // Inline: write into the active PTY instead of spawning a window.
+        // The session's shell/agent owns cwd + env, so Cwd/Env/Elevated are
+        // intentionally ignored here — call them out in the log so a confused
+        // user knows why their elevated flag did nothing.
+        if (string.Equals(cmd.Window, "inline", StringComparison.OrdinalIgnoreCase))
+        {
+            RunShellInline(cmd);
+            return;
+        }
+
+        // reuse:<id> — if a previous launch is still alive, focus it; only
+        // spawn when nothing's running. Trust + confirm gates still apply on
+        // first launch but a focus is a free action (already-trusted process).
+        if (CommandRunner.TryParseReuse(cmd.Window, out _) && _commandRunner.IsAlive(cmd))
+        {
+            if (!_commandRunner.FocusExisting(cmd))
+            {
+                Log.Debug("Reuse focus for '{Name}' returned false — process exists but has no main window yet", cmd.Name);
+            }
+            return;
+        }
+
+        // Confirm before state-changing commands (capture-on writes the hosts
+        // file, db drops, deploys). The user marks them with "confirm": true;
+        // modal cancel just no-ops.
+        if (cmd.Confirm == true)
+        {
+            var owner = Window.GetWindow(_content);
+            var argsPreview = cmd.Args is { Count: > 0 } a0 ? " " + string.Join(' ', a0) : string.Empty;
+            var elevatedNote = cmd.Elevated == true ? " (as administrator)" : string.Empty;
+            var ok = MessageDialog.Show(
+                owner,
+                title: $"Run '{cmd.Name}'?",
+                message: $"This will execute:\n\n  {cmd.Command}{argsPreview}\n\nin {ResolveCwd(cmd)}{elevatedNote}.",
+                primaryLabel: "Run",
+                secondaryLabel: "Cancel");
+            if (!ok) return;
+        }
+
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = cmd.Command,
+            Arguments = cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty,
+            WorkingDirectory = ResolveCwd(cmd),
+            UseShellExecute = true,
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
+        };
+        if (cmd.Elevated == true)
+        {
+            // Windows: triggers UAC; ERROR_CANCELLED if user declines.
+            psi.Verb = "runas";
+        }
+        if (cmd.Env is { Count: > 0 } env)
+        {
+            // UseShellExecute=true means we can only seed extra env vars via
+            // the ProcessStartInfo.Environment dictionary before launch; nulls
+            // remove (matches mcpOverrides semantics). Inheritance is automatic.
+            foreach (var (k, v) in env)
+            {
+                if (v is null) psi.Environment.Remove(k);
+                else            psi.Environment[k] = v;
+            }
+        }
+
+        try
+        {
+            var proc = _commandRunner.Spawn(cmd, psi);
+            Log.Information(
+                "Ran shell command '{Name}' in {Path} (window={Window}, longRunning={Long}, tracked={Tracked}, pid={Pid}, elevated={Elev}, env+={EnvCount})",
+                cmd.Name, psi.WorkingDirectory, cmd.Window ?? "new", cmd.LongRunning == true,
+                CommandRunner.KeyOf(cmd) is not null, proc?.Id ?? -1, cmd.Elevated == true, cmd.Env?.Count ?? 0);
+        }
+        catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
+        {
+            // ERROR_CANCELLED — UAC declined. Treat as user choice.
+            Log.Information("Shell command '{Name}' aborted at UAC prompt", cmd.Name);
+        }
+    }
+
+    /// <summary>
+    /// Write the shell command line into the active PTY so the session's
+    /// shell/agent runs it. Args are joined with a single space — this is
+    /// best-effort; the user accepts the same quoting rules they'd have at a
+    /// real prompt. No PTY means no-op (with a log) — typically the user just
+    /// hasn't activated the tab yet.
+    /// </summary>
+    private void RunShellInline(Firepit.Core.ProjectConfig.ProjectCommand cmd)
+    {
+        if (_ptyChannel is null)
+        {
+            Log.Information("Inline command '{Name}' skipped — no live PTY in {Project}", cmd.Name, Context.Name);
+            return;
+        }
+        var line = cmd.Args is { Count: > 0 } a
+            ? cmd.Command + " " + string.Join(' ', a)
+            : cmd.Command ?? string.Empty;
+        var bytes = System.Text.Encoding.UTF8.GetBytes(line + "\r");
+        _ = _ptyChannel.WriteAsync(bytes, _cts?.Token ?? CancellationToken.None);
+        Log.Information("Sent inline shell command '{Name}' to PTY for {Project}", cmd.Name, Context.Name);
     }
 
     private void OpenQuickLink(ResolvedQuickLink link)
@@ -1095,7 +1183,7 @@ public sealed class SessionTab : IAsyncDisposable
         try
         {
             _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(Context));
-            _toolbar.SetCommands(newConfig?.Commands ?? []);
+            _toolbar.SetCommands(newConfig?.Commands ?? [], _commandRunner.IsAlive);
         }
         catch (Exception ex)
         {

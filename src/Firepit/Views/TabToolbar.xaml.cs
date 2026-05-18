@@ -32,6 +32,9 @@ public partial class TabToolbar : UserControl
     public event EventHandler? InboxRequested;
     public event EventHandler<ResolvedQuickLink>? QuickLinkClicked;
     public event EventHandler<ProjectCommand>? CommandClicked;
+    /// <summary>Right-click → Stop on a long-running command's toolbar button.
+    /// Only raised when the command is currently tracked-alive.</summary>
+    public event EventHandler<ProjectCommand>? CommandStopRequested;
 
     /// <summary>
     /// Update the Inbox toolbar button. Count==0 → label collapses to "Inbox"
@@ -58,21 +61,48 @@ public partial class TabToolbar : UserControl
 
     private void OnInboxClick(object sender, RoutedEventArgs e) => InboxRequested?.Invoke(this, EventArgs.Empty);
 
-    public void SetCommands(IReadOnlyList<ProjectCommand> commands)
+    /// <summary>
+    /// Re-render the per-project command buttons. <paramref name="isRunning"/>
+    /// (Phase B) decides which buttons gain the live-dot prefix + a "Stop"
+    /// context-menu item. Pass <c>_ =&gt; false</c> if no lifecycle tracking
+    /// is wired up.
+    /// </summary>
+    public void SetCommands(IReadOnlyList<ProjectCommand> commands, Func<ProjectCommand, bool>? isRunning = null)
     {
+        var query = isRunning ?? (_ => false);
         var buttons = new List<Button>(commands.Count);
         var style = (Style)FindResource("ToolbarIconButton");
         foreach (var cmd in commands)
         {
             if (cmd.Disabled == true) continue;
+            var running = query(cmd);
             var button = new Button
             {
-                Content = BuildCommandContent(cmd),
+                Content = BuildCommandContent(cmd, running),
                 Style = style,
                 Tag = cmd,
-                ToolTip = BuildCommandTooltip(cmd),
+                ToolTip = BuildCommandTooltip(cmd, running),
             };
             button.Click += OnCommandClick;
+
+            // Stop only makes sense once tracked-alive. Shows a single-item
+            // context menu so the right-click affordance is discoverable even
+            // for non-running commands (they get a disabled "Not running"
+            // entry — keeps menu positioning consistent). Elevated children
+            // can't be killed from the non-elevated parent — the menu surfaces
+            // that explicitly instead of silently failing.
+            var menu = new ContextMenu();
+            var elevatedAndRunning = running && cmd.Elevated == true;
+            var stopItem = new MenuItem
+            {
+                Header = elevatedAndRunning ? "Stop (elevated — close its window manually)" : "Stop",
+                IsEnabled = running && !elevatedAndRunning,
+                Tag = cmd,
+            };
+            stopItem.Click += OnStopMenuClick;
+            menu.Items.Add(stopItem);
+            button.ContextMenu = menu;
+
             buttons.Add(button);
         }
         Commands.ItemsSource = buttons;
@@ -86,19 +116,36 @@ public partial class TabToolbar : UserControl
         }
     }
 
-    private static string BuildCommandTooltip(ProjectCommand cmd) => cmd.Type switch
+    private void OnStopMenuClick(object sender, RoutedEventArgs e)
     {
-        ProjectCommandType.Shell         => $"Shell: {cmd.Command} {string.Join(' ', cmd.Args ?? [])}",
-        ProjectCommandType.ClaudePrompt  => $"Send to Claude: \"{Truncate(cmd.Prompt, 80)}\"",
-        ProjectCommandType.Url           => $"Open: {cmd.Url}",
-        _                                => cmd.Name,
-    };
+        if (sender is MenuItem { Tag: ProjectCommand cmd })
+        {
+            CommandStopRequested?.Invoke(this, cmd);
+        }
+    }
+
+    private static string BuildCommandTooltip(ProjectCommand cmd, bool running = false)
+    {
+        var basis = cmd.Type switch
+        {
+            ProjectCommandType.Shell         => $"Shell: {cmd.Command} {string.Join(' ', cmd.Args ?? [])}",
+            ProjectCommandType.ClaudePrompt  => $"Send to Claude: \"{Truncate(cmd.Prompt, 80)}\"",
+            ProjectCommandType.Url           => $"Open: {cmd.Url}",
+            _                                => cmd.Name,
+        };
+        if (running)
+        {
+            return basis + "\n● Running — right-click to stop"
+                + (CommandRunner.TryParseReuse(cmd.Window, out _) ? " (click focuses the window)" : string.Empty);
+        }
+        return basis;
+    }
 
     private static string Truncate(string? s, int max) =>
         string.IsNullOrEmpty(s) ? "" :
         s.Length <= max ? s : s[..max] + "…";
 
-    private static StackPanel BuildCommandContent(ProjectCommand cmd)
+    private static StackPanel BuildCommandContent(ProjectCommand cmd, bool running = false)
     {
         var (geometry, mode) = IconResolver.Resolve(cmd.Icon, fallbackName: cmd.Name);
 
@@ -133,6 +180,23 @@ public partial class TabToolbar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
+
+        // Live indicator for tracked long-running / reuse commands. A small
+        // burning-warm dot tells the eye at a glance that the watcher is up,
+        // without stealing the button's icon slot.
+        if (running)
+        {
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 7,
+                Height = 7,
+                Margin = new Thickness(0, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Fill = new SolidColorBrush(Color.FromRgb(0xF5, 0xC9, 0x7B)), // burning warm
+            };
+            panel.Children.Add(dot);
+        }
+
         panel.Children.Add(path);
         panel.Children.Add(text);
         return panel;

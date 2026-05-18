@@ -5,6 +5,39 @@ Versioning follows SemVer; pre-1.0 minor bumps may include breaking changes.
 
 ## [Unreleased]
 
+## [0.5.18] — 2026-05-18
+
+### Added
+
+- **Toolbar quick-commands Phase B** (issue #11). Shell-type entries in
+  `.firepit/config.json` `commands[]` gain three new lifecycle knobs:
+  - `window: "new"` (default, unchanged) — spawn a fresh OS console window
+    each click. Same as Phase A.
+  - `window: "reuse:<id>"` — first click spawns the process and registers
+    it under the id; subsequent clicks bring its console window to the
+    foreground instead of spawning a duplicate. Per-project scope. The id
+    is yours to pick (e.g. `"dev"`, `"relay"`); two commands sharing an
+    id share the slot.
+  - `window: "inline"` — write the command line into the active tab's
+    PTY so the session's shell or agent executes it. `cwd` / `env` /
+    `elevated` are ignored in this mode — the PTY owns its environment.
+  - `longRunning: true` — toolbar button renders a burning-warm live dot
+    while the child process is alive; right-click → "Stop" kills the
+    process tree. Typically combined with `reuse:<id>` for dev-loop
+    watchers (`npm run dev`, `python relay_proxy.py`, `dotnet watch`).
+- **Scaffold doc.** New `commands[]` JSONC scaffold spells out all of
+  the Phase A + Phase B knobs with copy-paste examples.
+
+### Notes
+
+- Tab close does **not** stop tracked long-running children — by design.
+  The user opened these watchers deliberately; Firepit going away
+  shouldn't take them down. Use the right-click Stop, or close the
+  console window yourself.
+- UAC-elevated children can't be killed by the non-elevated Firepit
+  parent. The toolbar entry stays registered until the child exits on
+  its own; Stop is a no-op (logged at debug).
+
 ## [0.5.17] — 2026-05-17
 
 ### Added

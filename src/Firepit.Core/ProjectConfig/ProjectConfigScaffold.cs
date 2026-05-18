@@ -79,8 +79,22 @@ public static class ProjectConfigScaffold
   //   "shell"         — spawn Command + Args in the project dir (new window)
   //   "claude-prompt" — paste Prompt into the live session as if you typed it
   //   "url"           — open Url in the default browser
+  //
+  // Shell-only knobs (issue #11):
+  //   cwd          — working dir (default: project root)
+  //   env          — extra env vars on the child
+  //   elevated     — Windows UAC prompt (run as administrator)
+  //   confirm      — modal "Run?" prompt before spawning
+  //   window       — "new" (default) | "reuse:<id>" | "inline"
+  //                  reuse:<id>  → second click focuses the existing window
+  //                  inline      → write the command into THIS tab's PTY
+  //   longRunning  — true keeps a live indicator on the button + right-click
+  //                  "Stop" kills the process tree
   // "commands": [
   //   { "name": "Tests",   "type": "shell",         "command": "pwsh", "args": ["-c", "dotnet test"] },
+  //   { "name": "Dev",     "type": "shell",         "command": "npm",  "args": ["run", "dev"],
+  //     "window": "reuse:dev", "longRunning": true },
+  //   { "name": "Build",   "type": "shell",         "command": "dotnet", "args": ["build"], "window": "inline" },
   //   { "name": "Refactor","type": "claude-prompt", "prompt": "Look for code smells in src/ and propose fixes." },
   //   { "name": "Issues",  "type": "url",           "url": "https://github.com/<you>/{projectName}/issues" }
   // ],

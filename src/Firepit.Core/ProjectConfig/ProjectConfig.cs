@@ -44,12 +44,29 @@ public sealed record ProjectCommand(
     string? Url = null,                    // url
     bool? Disabled = null,
     // v0.5.17 (issue #11 Phase A) — Shell-only knobs that the bumblebeee
-    // capture-on workflow + similar dev loops actually need. window=reuse/
-    // longRunning/inline land in Phase B.
+    // capture-on workflow + similar dev loops actually need.
     string? Cwd = null,                    // shell — relative to project root, default = project root
     IReadOnlyDictionary<string, string?>? Env = null, // shell — merged onto the spawn env
     bool? Elevated = null,                 // shell — Windows: Verb=runas (UAC); ignored elsewhere
-    bool? Confirm = null);                 // shell — modal confirm before running (state-changing ops)
+    bool? Confirm = null,                  // shell — modal confirm before running (state-changing ops)
+    // v0.5.18 (issue #11 Phase B) — Window placement + lifecycle tracking.
+    //   "new"          → spawn a fresh OS console window each click (default,
+    //                    matches Phase A behaviour).
+    //   "reuse:<id>"   → if a previous launch with this id is still alive,
+    //                    bring its window to the foreground; otherwise spawn
+    //                    and register under that id. <id> is project-scoped.
+    //   "inline"       → write the resolved command line into the active
+    //                    session's PTY stdin, so the agent (or shell) inside
+    //                    the tab executes it. Cwd/Env/Elevated are ignored
+    //                    in this mode — the PTY's environment wins.
+    string? Window = null,
+    // When true, the toolbar button renders a running-indicator while the
+    // child process is alive and exposes a "Stop" right-click action that
+    // kills the process tree. Independent of Window — typically combined
+    // with "reuse:<id>" for long-running watchers (npm run dev, relay proxy)
+    // so a second click focuses the existing window instead of spawning a
+    // duplicate.
+    bool? LongRunning = null);
 
 public enum ProjectCommandType
 {
