@@ -8,6 +8,10 @@
   "version": 1,
   "id": "firepit-ai",
 
+  "quickLinks": [
+    { "name": "GitHub", "url": "https://github.com/chloe-dream/firepit-ai" }
+  ],
+
   // Toolbar URL buttons. {projectName} and {projectPath} are substituted.
   // "quickLinks": [
   //   { "name": "GitHub", "url": "https://github.com/<you>/{projectName}" },
@@ -38,9 +42,9 @@
   //   "shell"         — spawn Command + Args in the project dir (new window)
   //   "claude-prompt" — paste Prompt into the live session as if you typed it
   //   "url"           — open Url in the default browser
-  // "commands": [
-  //   { "name": "Tests",   "type": "shell",         "command": "pwsh", "args": ["-c", "dotnet test"] },
-  //   { "name": "Refactor","type": "claude-prompt", "prompt": "Look for code smells in src/ and propose fixes." },
-  //   { "name": "Issues",  "type": "url",           "url": "https://github.com/<you>/{projectName}/issues" }
-  // ]
+  "commands": [
+    { "name": "Run",   "type": "shell", "command": "pwsh", "args": ["-NoExit", "-Command", "./run.ps1"], "window": "new" },
+    { "name": "Build", "type": "shell", "command": "pwsh", "args": ["-NoExit", "-Command", "dotnet build Firepit.slnx -c Release"], "window": "new" },
+    { "name": "Tests", "type": "shell", "command": "pwsh", "args": ["-NoExit", "-Command", "dotnet test Firepit.slnx"], "window": "new" }
+  ]
 }

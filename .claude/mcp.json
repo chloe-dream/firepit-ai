@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "firepit": {
+      "transport": "stdio",
+      "command": "firepit-mcp"
+    }
+  }
+}
