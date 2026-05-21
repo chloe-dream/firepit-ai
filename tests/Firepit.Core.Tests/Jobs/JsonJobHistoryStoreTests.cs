@@ -132,9 +132,14 @@ public class JsonJobHistoryStoreTests : IDisposable
         var ancientPath = Path.Combine(dir, ancientName);
         await File.WriteAllTextAsync(ancientPath, "{}");
 
-        // RecordAsync triggers retention pass on every write.
+        // RecordAsync triggers retention pass on every write. The fresh record
+        // must carry a *now* timestamp — files are named after StartedAt, so a
+        // hardcoded fixture date eventually drifts past the 7-day cutoff and
+        // the "surviving" record gets swept up too (this test was a time-bomb
+        // that started failing 7 days after the fixture's 2026-05-13 date).
+        var now = DateTimeOffset.UtcNow;
         await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
-            MakeOutcome(), CancellationToken.None);
+            MakeOutcome(startedAt: now, endedAt: now.AddSeconds(14)), CancellationToken.None);
 
         Assert.False(File.Exists(ancientPath), "expected ancient record to be deleted by retention");
         Assert.Single(Directory.GetFiles(dir, "*.json"));

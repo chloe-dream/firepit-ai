@@ -945,16 +945,7 @@ public partial class MainWindow : Window
     {
         if (Tabs.SelectedItem is TabItem { Tag: SessionTab session })
         {
-            if (TabContentHost.Content is UIElement existing && !ReferenceEquals(existing, session.Content))
-            {
-                TabContentHost.Content = null;
-            }
-            if (!ReferenceEquals(TabContentHost.Content, session.Content))
-            {
-                TabContentHost.Content = session.Content;
-            }
-            TabContentHost.Visibility = Visibility.Visible;
-            EmptyState.Visibility = Visibility.Collapsed;
+            ShowTabContent(session);
 
             // Tab is now active → clear the "new since seen" badge. The
             // unpending count (toolbar button) is untouched — only Claude
@@ -987,10 +978,49 @@ public partial class MainWindow : Window
         }
         else
         {
-            TabContentHost.Content = null;
-            TabContentHost.Visibility = Visibility.Collapsed;
-            EmptyState.Visibility = Visibility.Visible;
+            HideAllTabContent();
         }
+    }
+
+    /// <summary>
+    /// Mount <paramref name="session"/>'s content (once) and make it the only
+    /// visible tab content. Inactive tabs stay mounted but Collapsed so their
+    /// WebView2 HwndHost — and its OLE drop registration and in-flight boot —
+    /// survive the switch. Collapsed hides the child hwnd, so no airspace
+    /// overlap between the visible and hidden terminals.
+    /// </summary>
+    private void ShowTabContent(SessionTab session)
+    {
+        var content = session.Content;
+        if (!TabContentHost.Children.Contains(content))
+        {
+            TabContentHost.Children.Add(content);
+        }
+        foreach (UIElement child in TabContentHost.Children)
+        {
+            child.Visibility = ReferenceEquals(child, content) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        TabContentHost.Visibility = Visibility.Visible;
+        EmptyState.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Detach a closed tab's content from the persistent host.</summary>
+    private void UnmountTabContent(SessionTab session)
+    {
+        if (TabContentHost.Children.Contains(session.Content))
+        {
+            TabContentHost.Children.Remove(session.Content);
+        }
+    }
+
+    private void HideAllTabContent()
+    {
+        foreach (UIElement child in TabContentHost.Children)
+        {
+            child.Visibility = Visibility.Collapsed;
+        }
+        TabContentHost.Visibility = Visibility.Collapsed;
+        EmptyState.Visibility = Visibility.Visible;
     }
 
     private void OnTabCloseClick(object sender, RoutedEventArgs e)
@@ -1043,9 +1073,7 @@ public partial class MainWindow : Window
         if (Tabs.Items.Count == 0)
         {
             Tabs.Visibility = Visibility.Collapsed;
-            TabContentHost.Content = null;
-            TabContentHost.Visibility = Visibility.Collapsed;
-            EmptyState.Visibility = Visibility.Visible;
+            HideAllTabContent();
         }
         else
         {
@@ -1053,6 +1081,7 @@ public partial class MainWindow : Window
             ((TabItem)Tabs.Items[newIndex]!).IsSelected = true;
         }
 
+        UnmountTabContent(session);
         try { await session.DisposeAsync(); } catch { /* ignored */ }
     }
 

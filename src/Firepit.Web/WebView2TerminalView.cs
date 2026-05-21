@@ -28,11 +28,12 @@ public sealed class WebView2TerminalView : ITerminalView
     private bool _initialized;
     private bool _disposed;
 
-    // Native OLE drop target registered on the WebView2 host HWND. Kept alive
-    // by this field so the CCW isn't collected while OLE holds it; the HWND is
-    // remembered separately so Dispose can RevokeDragDrop even after teardown.
+    // Native OLE drop target registered on the WebView2 host HWND *and* every
+    // descendant HWND. Kept alive by this field so the CCW isn't collected
+    // while OLE holds it; the HWNDs are remembered separately so Dispose can
+    // RevokeDragDrop each one even after teardown.
     private FileDropTarget? _fileDropTarget;
-    private IntPtr _dropTargetHwnd;
+    private readonly List<IntPtr> _dropTargetHwnds = new();
 
     public WebView2TerminalView(TerminalThemeSettings? theme = null, int fontSize = 14)
     {
@@ -203,11 +204,14 @@ public sealed class WebView2TerminalView : ITerminalView
         }
         _disposed = true;
 
-        if (_dropTargetHwnd != IntPtr.Zero)
+        if (_dropTargetHwnds.Count > 0)
         {
-            try { NativeDragDrop.RevokeDragDrop(_dropTargetHwnd); }
-            catch (Exception ex) { Log.Debug(ex, "WV2 drop: RevokeDragDrop failed"); }
-            _dropTargetHwnd = IntPtr.Zero;
+            foreach (var hwnd in _dropTargetHwnds)
+            {
+                try { NativeDragDrop.RevokeDragDrop(hwnd); }
+                catch (Exception ex) { Log.Debug(ex, "WV2 drop: RevokeDragDrop failed for 0x{Hwnd:X}", hwnd.ToInt64()); }
+            }
+            _dropTargetHwnds.Clear();
             _fileDropTarget = null;
         }
 
@@ -252,31 +256,57 @@ public sealed class WebView2TerminalView : ITerminalView
     }
 
     /// <summary>
-    /// Register a native OLE drop target on the WebView2 host HWND. WPF's
-    /// managed drag-drop never fires over the HwndHost airspace, and with
-    /// <c>AllowExternalDrop = false</c> the browser registers no target of its
-    /// own — so without this, dropping a file just shows the "no-drop" cursor.
+    /// Register a native OLE drop target on the WebView2 host HWND and on every
+    /// descendant window. WPF's managed drag-drop never fires over the HwndHost
+    /// airspace, so a native <c>IDropTarget</c> is the only route. Registering
+    /// on the host HWND alone is not enough: OLE looks up the drop target on the
+    /// exact window under the cursor and does <em>not</em> walk up the parent
+    /// chain, and the cursor is always over one of Chromium's render-widget
+    /// child HWNDs that sit on top of the host. With <c>AllowExternalDrop=false</c>
+    /// those children either have no target (→ "no-drop" cursor) or a rejecting
+    /// one — so we register ours on each, revoking any existing target first.
     /// </summary>
     private void RegisterFileDropTarget()
     {
-        var hwnd = _webView.Handle;
-        if (hwnd == IntPtr.Zero)
+        var host = _webView.Handle;
+        if (host == IntPtr.Zero)
         {
             Log.Warning("WV2 drop: host HWND unavailable — file drop disabled");
             return;
         }
 
         _fileDropTarget = new FileDropTarget(OnFilesDropped);
-        var hr = NativeDragDrop.RegisterDragDrop(hwnd, _fileDropTarget);
-        if (hr != 0)
+
+        var targets = new List<IntPtr> { host };
+        NativeDragDrop.EnumChildWindows(host, (child, _) => { targets.Add(child); return true; }, IntPtr.Zero);
+
+        foreach (var hwnd in targets)
         {
-            Log.Warning("WV2 drop: RegisterDragDrop failed (0x{Hr:X8})", hr);
+            var hr = NativeDragDrop.RegisterDragDrop(hwnd, _fileDropTarget);
+            if (hr == NativeDragDrop.DragDropEAlreadyRegistered)
+            {
+                // Chromium owns a target on this child — replace it with ours.
+                NativeDragDrop.RevokeDragDrop(hwnd);
+                hr = NativeDragDrop.RegisterDragDrop(hwnd, _fileDropTarget);
+            }
+            if (hr == 0)
+            {
+                _dropTargetHwnds.Add(hwnd);
+            }
+            else
+            {
+                Log.Debug("WV2 drop: RegisterDragDrop failed for 0x{Hwnd:X} (0x{Hr:X8})", hwnd.ToInt64(), hr);
+            }
+        }
+
+        if (_dropTargetHwnds.Count == 0)
+        {
+            Log.Warning("WV2 drop: no HWND accepted a drop target — file drop disabled");
             _fileDropTarget = null;
             return;
         }
-
-        _dropTargetHwnd = hwnd;
-        Log.Information("WV2 drop: file drop target registered on hwnd 0x{Hwnd:X}", hwnd.ToInt64());
+        Log.Information("WV2 drop: file drop target registered on {Count} HWND(s) (host 0x{Host:X})",
+            _dropTargetHwnds.Count, host.ToInt64());
     }
 
     private void OnFilesDropped(IReadOnlyList<string> paths)

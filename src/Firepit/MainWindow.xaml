@@ -209,9 +209,15 @@
                                FontSize="{DynamicResource BaseFontSize}" />
                 </Border>
 
-            <ContentControl x:Name="TabContentHost"
-                            Background="#1A1612"
-                            Visibility="Collapsed" />
+            <!-- Every open tab's content is mounted here persistently and
+                 toggled by Visibility (active=Visible, rest=Collapsed). It is
+                 NOT a content-swapping host: swapping would detach and recreate
+                 each WebView2's HwndHost on every tab change, which destroyed
+                 the OLE file-drop registration and stalled the xterm "ready"
+                 handshake for any tab switched away from mid-boot. -->
+            <Grid x:Name="TabContentHost"
+                  Background="#1A1612"
+                  Visibility="Collapsed" />
         </Grid>
 
         <!-- Project picker popup -->

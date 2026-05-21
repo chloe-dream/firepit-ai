@@ -68,6 +68,7 @@ public sealed class SessionTab : IAsyncDisposable
     private WebView2TerminalView? _terminalView;
     private IPtyChannel? _ptyChannel;
     private CancellationTokenSource? _cts;
+    private Task? _startTask;
     private readonly Firepit.Core.ProjectConfig.CommandsTrustLedger? _trustLedger;
     private readonly CommandRunner _commandRunner;
     private bool _initialized;
@@ -405,6 +406,16 @@ public sealed class SessionTab : IAsyncDisposable
     public async Task RestartIfPending()
     {
         if (_disposed) return;
+
+        // A boot is already underway — let it finish. Interrupting it here
+        // (teardown + fresh start) was exactly what killed sessions during
+        // rapid tab-switching: each re-select aborted the in-flight xterm
+        // "ready" handshake, the WebView2 timed out, and the tab went Dead.
+        if (_startTask is { IsCompleted: false })
+        {
+            return;
+        }
+
         var needsStart = !_initialized
                           || _detector.State == SessionState.Dead
                           || _detector.State == SessionState.Cold;
@@ -492,12 +503,28 @@ public sealed class SessionTab : IAsyncDisposable
         await StartSessionAsync(resume);
     }
 
-    private async Task StartSessionAsync(bool resume)
+    /// <summary>
+    /// Idempotent session-boot entry point. Multiple callers (deferred-tab
+    /// wake, EnsureInitialized, restore kick) can race here during rapid tab
+    /// switching; this coalesces them onto a single in-flight boot so the
+    /// WebView2 + xterm "ready" handshake is never interrupted mid-flight.
+    /// </summary>
+    private Task StartSessionAsync(bool resume)
     {
+        if (_startTask is { IsCompleted: false })
+        {
+            return _startTask;
+        }
         if (_initialized && _detector.State != SessionState.Dead && _detector.State != SessionState.Cold)
         {
-            return;
+            return Task.CompletedTask;
         }
+        _startTask = StartSessionCoreAsync(resume);
+        return _startTask;
+    }
+
+    private async Task StartSessionCoreAsync(bool resume)
+    {
         _initialized = true;
 
         try
@@ -586,6 +613,11 @@ public sealed class SessionTab : IAsyncDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "Session start failed for {Project}", Context.Name);
+            // Reset like the cancel path: leaving _initialized=true would make
+            // the next StartSessionAsync early-return, so a click on the
+            // "session went out" affordance (→ Rekindle) would be the only way
+            // back. Clearing it lets RestartIfPending retry cleanly.
+            _initialized = false;
             ShowFatal(ex.Message);
             _detector.NotifyExited();
         }
@@ -649,6 +681,7 @@ public sealed class SessionTab : IAsyncDisposable
         }
         _cts?.Dispose();
         _cts = null;
+        _startTask = null;
         _initialized = false;
     }
 

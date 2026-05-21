@@ -297,9 +297,18 @@ internal interface IDropTarget
 
 internal static class NativeDragDrop
 {
+    /// <summary>DRAGDROP_E_ALREADYREGISTERED — the HWND already has a drop target.</summary>
+    public const int DragDropEAlreadyRegistered = unchecked((int)0x80040101);
+
+    public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
     [DllImport("ole32.dll")]
     public static extern int RegisterDragDrop(IntPtr hwnd, [MarshalAs(UnmanagedType.Interface)] IDropTarget pDropTarget);
 
     [DllImport("ole32.dll")]
     public static extern int RevokeDragDrop(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
 }

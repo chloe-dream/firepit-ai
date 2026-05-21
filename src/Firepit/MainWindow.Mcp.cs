@@ -107,15 +107,14 @@ public partial class MainWindow : IMcpBackend
             if (Tabs.Items.Count == 0)
             {
                 Tabs.Visibility = System.Windows.Visibility.Collapsed;
-                TabContentHost.Content = null;
-                TabContentHost.Visibility = System.Windows.Visibility.Collapsed;
-                EmptyState.Visibility = System.Windows.Visibility.Visible;
+                HideAllTabContent();
             }
             else
             {
                 var newIndex = Math.Min(index, Tabs.Items.Count - 1);
                 ((TabItem)Tabs.Items[newIndex]!).IsSelected = true;
             }
+            UnmountTabContent(entry.Session);
             try { await entry.Session.DisposeAsync(); } catch { /* ignored */ }
             return new ToolCallResult(true, $"Closed {projectName}");
         });
