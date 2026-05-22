@@ -950,8 +950,32 @@ public sealed class SessionTab : IAsyncDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Command '{Name}' failed", cmd.Name);
-            ShowFatal($"Command '{cmd.Name}' failed: {ex.Message}");
+            ShowCommandError(cmd, ex);
         }
+    }
+
+    /// <summary>
+    /// Surface a failed toolbar command in a modal dialog. <see cref="ShowFatal"/>
+    /// is useless here: it renders a WPF TextBlock inside the terminal area, but
+    /// the WebView2 is an HwndHost and (airspace rule) paints over every WPF
+    /// element — so over a live terminal the message is invisible. A modal
+    /// dialog is its own top-level window, so it actually shows. The most common
+    /// failure is a missing executable (Win32 error 2), so call that out
+    /// explicitly with the resolved command name.
+    /// </summary>
+    private void ShowCommandError(Firepit.Core.ProjectConfig.ProjectCommand cmd, Exception ex)
+    {
+        var owner = Window.GetWindow(_content);
+        var detail = ex is System.ComponentModel.Win32Exception { NativeErrorCode: 2 }
+            ? $"'{cmd.Command}' could not be started — the file was not found. " +
+              "Is it installed and on your PATH? (e.g. 'pwsh' is PowerShell 7, which isn't installed by default — use 'powershell'.)"
+            : ex.Message;
+        MessageDialog.Show(
+            owner,
+            title: $"Command '{cmd.Name}' failed",
+            message: detail,
+            primaryLabel: "OK",
+            secondaryLabel: null);
     }
 
     /// <summary>

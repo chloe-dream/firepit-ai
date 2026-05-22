@@ -43,8 +43,8 @@
   //   "claude-prompt" — paste Prompt into the live session as if you typed it
   //   "url"           — open Url in the default browser
   "commands": [
-    { "name": "Run",   "type": "shell", "command": "pwsh", "args": ["-NoExit", "-Command", "./run.ps1"], "window": "new" },
-    { "name": "Build", "type": "shell", "command": "pwsh", "args": ["-NoExit", "-Command", "dotnet build Firepit.slnx -c Release"], "window": "new" },
-    { "name": "Tests", "type": "shell", "command": "pwsh", "args": ["-NoExit", "-Command", "dotnet test Firepit.slnx"], "window": "new" }
+    { "name": "Run",   "type": "shell", "command": "powershell", "args": ["-NoExit", "-Command", "./run.ps1"], "window": "new" },
+    { "name": "Build", "type": "shell", "command": "powershell", "args": ["-NoExit", "-Command", "dotnet build Firepit.slnx -c Release"], "window": "new" },
+    { "name": "Tests", "type": "shell", "command": "powershell", "args": ["-NoExit", "-Command", "dotnet test Firepit.slnx"], "window": "new" }
   ]
 }
