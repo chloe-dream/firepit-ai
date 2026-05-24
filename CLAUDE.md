@@ -75,7 +75,9 @@ These are non-negotiable. Violating them is a regression even if tests pass.
 
 ## Explicitly Out of Scope for V1
 
-File browser, markdown viewer, image viewer, embedded PowerShell, project sub-tabs / cockpit layout, agent adapters beyond Claude Code, macOS/Linux, multiple themes, telemetry, crash reporting, auto-update, any AI features beyond hosting agents, registry-editor UI for MCP, DPAPI in-file secrets, MCP marketplace discovery.
+File browser, markdown viewer, image viewer, embedded PowerShell, project sub-tabs / cockpit layout, agent adapters beyond Claude Code, macOS/Linux, multiple themes, telemetry, crash reporting, any AI features beyond hosting agents, registry-editor UI for MCP, DPAPI in-file secrets, MCP marketplace discovery.
+
+(Post-V1 note: an in-app update check + self-update landed after V1 — a caption-bar badge polls GitHub Releases and the Inno installer is run silently to update in place. See `Firepit.Core.Updates` and `MainWindow.Updates.cs`.)
 
 If a request reads as V2/V3 territory, push back: confirm V1 is solid first. The sub-tab cockpit in particular is a magnet for scope creep — V1 ships the foundation (terminal-only tabs, quick-links open externally), V2 generalizes.
 
@@ -156,7 +158,7 @@ Avoid mocking what you don't own (ConPTY, WebView2). Wrap them in narrow interfa
 
 ## Distribution (V1)
 
-GitHub Releases, single-file self-contained .NET publish, manual download. No installer, no auto-update, no MSIX. Target: drop the exe in any folder, double-click, it runs.
+GitHub Releases, single-file self-contained .NET publish. Two artifacts per `v*` tag: the published `bin/win-x64/` zipped, and an Inno Setup installer (`FirepitSetup-*.exe`, per-user `%LOCALAPPDATA%\Programs\Firepit`, no UAC). The portable zip still works drop-the-exe-anywhere. Installed builds self-update via the in-app update check (downloads the installer, runs it silently, relaunches); portable copies fall back to opening the release page.
 
 The xterm.js bundle and `terminal.html` ship as embedded resources inside the exe — keep `dotnet publish` output to one file plus a runtime folder.
 

@@ -10,4 +10,8 @@
     <PackageReference Include="NCrontab" Version="3.3.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Firepit.Core.Tests" />
+  </ItemGroup>
+
 </Project>

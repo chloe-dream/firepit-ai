@@ -160,6 +160,38 @@
             <StackPanel Grid.Column="4"
                         Orientation="Horizontal"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <!-- Update badge: an ember pill, hidden until a newer release is
+                     found. Click opens the install/ignore dialog. Label text is
+                     set from code (the discovered version). -->
+                <Button x:Name="UpdateButton"
+                        Visibility="Collapsed"
+                        Click="OnUpdateBadgeClick"
+                        Cursor="Hand"
+                        VerticalAlignment="Center"
+                        Margin="0,0,8,0"
+                        ToolTip="Eine neue Firepit-Version steht bereit">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="#2A211A" CornerRadius="10" Padding="9,3">
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#332821" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="7" Height="7" Fill="#F5C97B" Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="UpdateLabel"
+                                   Text="Update"
+                                   Foreground="#F5C97B"
+                                   FontFamily="Cascadia Code, Consolas, Courier New"
+                                   FontSize="{DynamicResource SmallFontSize}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <Button x:Name="SettingsButton"
                         Style="{StaticResource SettingsGearButton}"
                         Click="OnSettingsClick"

@@ -13,7 +13,8 @@ public sealed record FirepitSettings(
     IReadOnlyDictionary<string, McpServerSettings>? McpServers = null,
     IReadOnlyList<QuickLinkSettings>? QuickLinks = null,
     IReadOnlyList<ProjectSettings>? Projects = null,
-    PlatformSettings? Platform = null)
+    PlatformSettings? Platform = null,
+    UpdateSettings? Updates = null)
 {
     public static readonly FirepitSettings Defaults = new(
         ProjectsRoot: Path.Combine(
@@ -25,7 +26,8 @@ public sealed record FirepitSettings(
         Shells: ShellsSettings.Defaults,
         Terminal: TerminalThemeSettings.Defaults,
         Ui: UiSettings.Defaults,
-        Platform: PlatformSettings.Defaults);
+        Platform: PlatformSettings.Defaults,
+        Updates: UpdateSettings.Defaults);
     // QuickLinks are intentionally empty by default — they're user-specific
     // (GitHub org/user, internal tools, personal dashboards). The per-project
     // .firepit/config.json scaffold shows commented examples of how to add
@@ -128,6 +130,22 @@ public sealed record TabSettings(
 public sealed record ShellsSettings(string Preferred)
 {
     public static readonly ShellsSettings Defaults = new(Preferred: "wt");
+}
+
+/// <summary>
+/// Background update-check config (grouped under the "updates" key). Firepit
+/// polls GitHub Releases for a newer version and surfaces a badge in the
+/// caption bar. <see cref="IgnoredVersion"/> is the version the user chose to
+/// dismiss ("Diese Version ignorieren") — the badge stays hidden until a
+/// strictly higher version appears. Set <see cref="CheckForUpdates"/> to false
+/// to opt out entirely.
+/// </summary>
+public sealed record UpdateSettings(
+    bool CheckForUpdates = true,
+    int CheckIntervalHours = 4,
+    string? IgnoredVersion = null)
+{
+    public static readonly UpdateSettings Defaults = new();
 }
 
 public sealed record ProjectSettings(

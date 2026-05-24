@@ -320,6 +320,10 @@ public partial class MainWindow : Window
         // hadn't happened yet at that point in v0.5.13–v0.5.15, which is why
         // the firepit MCP server was unreachable. Issue #12.
         (Application.Current as App)?.EnsureMcpHostStarted(this);
+
+        // Background update checks (VS-Code-style): caption-bar ember badge when
+        // a newer GitHub release is found. Opt out via updates.checkForUpdates.
+        StartUpdateChecks();
     }
 
     private async void StartJobScheduler()
@@ -1415,6 +1419,9 @@ public partial class MainWindow : Window
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _disposedUpdates = true;
+        _updateTimer?.Stop();
+
         if (_settings.Tabs.PersistAcrossRestarts)
         {
             try
