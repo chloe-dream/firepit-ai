@@ -399,9 +399,6 @@ public sealed class WebView2TerminalView : ITerminalView
                     Log.Information("WV2 bridge: 'ready' received");
                     _readyTcs.TrySetResult();
                     break;
-                case "diag":
-                    Log.Information("WV2 diag: phase marks {Marks}", json);
-                    break;
                 case "input":
                     if (doc.RootElement.TryGetProperty("b64", out var b64Prop)
                         && b64Prop.ValueKind == JsonValueKind.String)

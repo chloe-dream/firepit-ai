@@ -475,21 +475,14 @@
                 try { ro.observe(document.getElementById('terminal')); } catch (e) { /* ignore */ }
             }
 
-            // TEMP DIAG: phase timing to localise the ready-handshake cost.
-            const T0 = performance.now();
-            const mark = {};
-            function diag(label) { mark[label] = Math.round(performance.now() - T0); }
-
             let announced = false;
             function announceReady() {
                 if (announced) return;
                 announced = true;
-                diag('rafFired');
                 fitNow(); // skipped while hidden — a reveal handler refits later
                 // Resize MUST be posted before 'ready' — the host blocks on the
                 // ready handshake to spawn the agent with the correct dimensions.
                 postToHost({ type: 'resize', cols: term.cols, rows: term.rows });
-                postToHost({ type: 'diag', marks: mark });
                 postToHost({ type: 'ready' });
             }
 
@@ -500,10 +493,8 @@
             // the reserved scrollbar gutter. (If the boot cap below opens early,
             // the fontReady recalc recovers the metrics once the font lands.)
             function startup() {
-                diag('startup');
                 term.open(document.getElementById('terminal'));
                 opened = true;
-                diag('open');
                 // rAF is suspended while the tab isn't compositing, so it cannot
                 // be the sole trigger for 'ready' — that hang is what left tabs
                 // stuck "igniting". Race a timer that fires even when the page
@@ -525,8 +516,7 @@
                     .catch(function () { /* font may be missing — proceed with fallback */ })
                 : Promise.resolve();
 
-            domReady.then(function () { diag('domReady'); });
-            fontReady.then(function () { diag('fontReady'); recalc(); });
+            fontReady.then(function () { recalc(); });
             Promise.all([domReady, fontReady]).then(startupOnce);
             // Hard cap: never let a hung font fetch or a missing 'load' event
             // stall boot past the host's 15 s ready window.
