@@ -415,15 +415,81 @@
                 }
             });
 
-            window.addEventListener('resize', function () {
-                try { fitAddon.fit(); } catch (e) { /* ignore */ }
-            });
+            // ---- Sizing / visibility resilience ----------------------------
+            // A terminal can finish booting while its tab is in the background:
+            // the user clicks a tab, then switches away before WebView2 + xterm
+            // are ready. A WebView2 that isn't compositing (its host hwnd is
+            // Collapsed for the inactive tab) suspends requestAnimationFrame and
+            // lays the page out at zero size. That used to (a) hang the 'ready'
+            // handshake — rAF was the only trigger, so the host timed the tab
+            // out or left it stuck "igniting" — and (b) lock in a one-column,
+            // microscopic-font grid, because open()/fit() measured a hidden,
+            // zero-sized container. Defence: never gate 'ready' on rAF alone,
+            // and re-measure + re-fit whenever the terminal is (re)shown or the
+            // embedded font finishes loading.
+            let opened = false;
+            let fittedVisible = false;
 
+            function terminalVisible() {
+                const el = document.getElementById('terminal');
+                return !document.hidden && !!el && el.clientWidth > 0 && el.clientHeight > 0;
+            }
+
+            function fitNow() {
+                if (!opened || !terminalVisible()) return;
+                try { fitAddon.fit(); fittedVisible = true; } catch (e) { /* ignore */ }
+            }
+
+            // Re-fit on (re)show. If the boot fit ran while hidden the cell
+            // metrics were measured at zero size (→ microscopic text); xterm
+            // only re-measures the cell when a font option actually changes
+            // value, so nudge font-family to a string that resolves to the same
+            // fonts (trailing space) and back to force CharSizeService.measure().
+            // Only needed until the first fit while visible succeeds.
+            function recalc() {
+                if (!opened || !terminalVisible()) return;
+                if (!fittedVisible) {
+                    const ff = term.options.fontFamily;
+                    try {
+                        term.options.fontFamily = ff + ' ';
+                        term.options.fontFamily = ff;
+                    } catch (e) { /* ignore */ }
+                }
+                requestAnimationFrame(fitNow);
+                setTimeout(fitNow, 50);
+            }
+
+            window.addEventListener('resize', fitNow);
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) recalc();
+            });
+            if (typeof ResizeObserver === 'function') {
+                let lastH = 0;
+                const ro = new ResizeObserver(function () {
+                    const el = document.getElementById('terminal');
+                    const h = el ? el.clientHeight : 0;
+                    if (h > 0 && lastH === 0) recalc();   // hidden → shown
+                    else if (h > 0) fitNow();             // live resize
+                    lastH = h;
+                });
+                try { ro.observe(document.getElementById('terminal')); } catch (e) { /* ignore */ }
+            }
+
+            // TEMP DIAG: phase timing to localise the ready-handshake cost.
+            const T0 = performance.now();
+            const mark = {};
+            function diag(label) { mark[label] = Math.round(performance.now() - T0); }
+
+            let announced = false;
             function announceReady() {
-                try { fitAddon.fit(); } catch (e) { /* ignore */ }
+                if (announced) return;
+                announced = true;
+                diag('rafFired');
+                fitNow(); // skipped while hidden — a reveal handler refits later
                 // Resize MUST be posted before 'ready' — the host blocks on the
                 // ready handshake to spawn the agent with the correct dimensions.
                 postToHost({ type: 'resize', cols: term.cols, rows: term.rows });
+                postToHost({ type: 'diag', marks: mark });
                 postToHost({ type: 'ready' });
             }
 
@@ -431,11 +497,23 @@
             // Otherwise xterm measures cell width with whatever fallback the
             // browser rendered first, fit-addon picks a column count for that
             // metric, and once the real font swaps in the lines overflow into
-            // the reserved scrollbar gutter.
+            // the reserved scrollbar gutter. (If the boot cap below opens early,
+            // the fontReady recalc recovers the metrics once the font lands.)
             function startup() {
+                diag('startup');
                 term.open(document.getElementById('terminal'));
+                opened = true;
+                diag('open');
+                // rAF is suspended while the tab isn't compositing, so it cannot
+                // be the sole trigger for 'ready' — that hang is what left tabs
+                // stuck "igniting". Race a timer that fires even when the page
+                // is hidden; announceReady is idempotent so only the first wins.
                 requestAnimationFrame(announceReady);
+                setTimeout(announceReady, 200);
             }
+
+            let started = false;
+            function startupOnce() { if (!started) { started = true; startup(); } }
 
             const domReady = (document.readyState === 'complete')
                 ? Promise.resolve()
@@ -447,7 +525,12 @@
                     .catch(function () { /* font may be missing — proceed with fallback */ })
                 : Promise.resolve();
 
-            Promise.all([domReady, fontReady]).then(startup);
+            domReady.then(function () { diag('domReady'); });
+            fontReady.then(function () { diag('fontReady'); recalc(); });
+            Promise.all([domReady, fontReady]).then(startupOnce);
+            // Hard cap: never let a hung font fetch or a missing 'load' event
+            // stall boot past the host's 15 s ready window.
+            setTimeout(startupOnce, 3000);
         })();
     </script>
 </body>
