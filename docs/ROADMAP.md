@@ -378,6 +378,24 @@ near-term commitment.
 - Bundle strategy: opt-in only. Default off; users who skip pay no
   installer-size cost.
 
+**Operating boundaries (design requirement, not optional polish):** a
+local agent that "can do everything" is the wrong default. The sidecar
+ships with explicit boundaries baked in from the first cut, not bolted on
+later — raised by an external contributor on [issue #10](https://github.com/chloe-dream/firepit-ai/issues/10#issuecomment-4518971610)
+and a clean fit with Firepit's existing posture (per-project shell-command
+trust gate, `confirm:` flags, human-in-the-loop by default):
+
+- Local model handles cheap / reversible workspace actions; a
+  stronger / cloud model is only invoked when the task actually needs it.
+- Human approval is required before: external sends, destructive file
+  changes, publishing, money- or API-heavy actions, and customer-facing
+  output — same gate shape as the shell-command trust prompt.
+- A local→cloud (or local→manual) escalation is **logged and
+  approval-gated**, never silent. This reuses the "anything that should
+  have worked at session start but didn't" diagnostics surface idea from
+  [issue #4](https://github.com/chloe-dream/firepit-ai/issues/4) rather
+  than inventing a parallel one.
+
 **Out of scope for M8:** multi-model routing, custom fine-tunes / LoRA,
 concurrent model execution. One active local model at a time, single
 default per user, no fancy switcher.
