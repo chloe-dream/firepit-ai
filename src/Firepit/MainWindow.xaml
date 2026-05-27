@@ -358,13 +358,9 @@
                     </ListBox>
 
                     <Border Grid.Row="2" Padding="6,6" BorderThickness="0,1,0,0" BorderBrush="#332B22">
-                        <Button x:Name="BrowseFolderButton"
-                                Click="OnBrowseFolderClick"
-                                Content="+ Browse for folder…"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left">
-                            <Button.Style>
-                                <Style TargetType="Button">
+                        <StackPanel>
+                            <StackPanel.Resources>
+                                <Style x:Key="PickerActionButton" TargetType="Button">
                                     <Setter Property="Background" Value="Transparent" />
                                     <Setter Property="BorderThickness" Value="0" />
                                     <Setter Property="Foreground" Value="#A89F92" />
@@ -372,6 +368,8 @@
                                     <Setter Property="FontSize" Value="{DynamicResource BaseFontSize}" />
                                     <Setter Property="Padding" Value="6,8" />
                                     <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="Button">
@@ -395,8 +393,16 @@
                                         </Setter.Value>
                                     </Setter>
                                 </Style>
-                            </Button.Style>
-                        </Button>
+                            </StackPanel.Resources>
+                            <Button x:Name="NewProjectButton"
+                                    Click="OnNewProjectClick"
+                                    Content="✦ New project…"
+                                    Style="{StaticResource PickerActionButton}" />
+                            <Button x:Name="BrowseFolderButton"
+                                    Click="OnBrowseFolderClick"
+                                    Content="+ Browse for folder…"
+                                    Style="{StaticResource PickerActionButton}" />
+                        </StackPanel>
                     </Border>
                 </Grid>
             </Border>

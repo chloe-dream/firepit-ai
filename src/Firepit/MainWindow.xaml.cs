@@ -1284,10 +1284,63 @@ public partial class MainWindow : Window
             return;
         }
 
-        var folder = dialog.FolderName;
+        OpenManualProject(dialog.FolderName);
+    }
+
+    private void OnNewProjectClick(object sender, RoutedEventArgs e)
+    {
+        var root = _settings.ProjectsRoot;
+        var name = InputDialog.Show(
+            this,
+            title: "New project",
+            message: $"Creates a new folder under:\n  {root}",
+            primaryLabel: "Create",
+            validate: candidate =>
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    return null; // empty is "not yet valid" but shows no scolding error
+                }
+                if (candidate.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+                {
+                    return "Name contains characters not allowed in a folder name.";
+                }
+                if (Directory.Exists(System.IO.Path.Combine(root, candidate)))
+                {
+                    return "A folder with that name already exists.";
+                }
+                return null;
+            });
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        var folder = System.IO.Path.Combine(root, name);
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to create project folder {Folder}", folder);
+            ShowToast($"Could not create folder: {ex.Message}", isError: true);
+            return;
+        }
+
+        OpenManualProject(folder);
+    }
+
+    /// <summary>
+    /// Persists <paramref name="folder"/> as a manual project entry (so it
+    /// survives restart), opens a session tab for it, and refreshes the picker.
+    /// Shared by "Browse for folder…" and "New project…".
+    /// </summary>
+    private void OpenManualProject(string folder)
+    {
         var name = System.IO.Path.GetFileName(folder.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
 
-        // Persist as a manual project entry so it survives restart.
         var existing = (_settings.Projects ?? []).ToList();
         if (!existing.Any(p => string.Equals(p.Path, folder, StringComparison.OrdinalIgnoreCase)))
         {
