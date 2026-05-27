@@ -68,9 +68,11 @@ public partial class MessageDialog : Window
         string title,
         string message,
         string primaryLabel,
-        string secondaryLabel)
+        string secondaryLabel,
+        double width = 420)
     {
         var dialog = new MessageDialog(title, message, primaryLabel, secondaryLabel);
+        dialog.Width = width;
         // Esc must mean "later" (Dismissed), not the secondary action — so the
         // secondary button must not double as the cancel button here.
         dialog.SecondaryButton.IsCancel = false;

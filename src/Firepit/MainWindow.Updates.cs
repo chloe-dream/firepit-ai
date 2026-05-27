@@ -107,7 +107,7 @@ public partial class MainWindow
     {
         _availableUpdate = info;
         UpdateLabel.Text = $"v{info.Version.ToString(3)}";
-        UpdateButton.ToolTip = $"Firepit {info.Version.ToString(3)} steht bereit — klick für Details";
+        UpdateButton.ToolTip = $"Firepit {info.Version.ToString(3)} is ready — click for details";
         UpdateButton.Visibility = Visibility.Visible;
     }
 
@@ -122,21 +122,22 @@ public partial class MainWindow
         var canSelfUpdate = !string.IsNullOrEmpty(info.InstallerAssetUrl)
                             && UpdateInstaller.TryGetInnoInstallDir(out _);
 
-        var primary = canSelfUpdate ? "Aktualisieren & neu starten" : "Im Browser öffnen";
+        var primary = canSelfUpdate ? "Update & restart" : "Open in browser";
         var message =
-            $"Installiert:  {current}\n" +
-            $"Verfügbar:   {info.Version.ToString(3)}" +
+            $"Installed:  {current}\n" +
+            $"Available:  {info.Version.ToString(3)}" +
             (canSelfUpdate
-                ? "\n\nFirepit wird heruntergeladen, geschlossen und neu gestartet. Laufende Agent-Sessions werden dabei beendet."
-                : "\n\nDiese Installation lässt sich nicht automatisch aktualisieren — die Release-Seite öffnet im Browser.") +
+                ? "\n\nFirepit will be downloaded, closed, and restarted. Any running agent sessions will be terminated."
+                : "\n\nThis installation can't update itself automatically — the release page will open in your browser.") +
             notes;
 
         var choice = MessageDialog.ShowChoice(
             this,
-            title: $"Update verfügbar: v{info.Version.ToString(3)}",
+            title: $"Update available: v{info.Version.ToString(3)}",
             message: message,
             primaryLabel: primary,
-            secondaryLabel: "Diese Version ignorieren");
+            secondaryLabel: "Ignore this version",
+            width: 520);
 
         switch (choice)
         {
@@ -185,7 +186,7 @@ public partial class MainWindow
         _updateInstallInProgress = true;
         try
         {
-            ShowToast($"Lade Firepit {info.Version.ToString(3)} herunter …");
+            ShowToast($"Downloading Firepit {info.Version.ToString(3)} …");
             var installerPath = await UpdateInstaller.DownloadAsync(info, UpdateHttp, CancellationToken.None).ConfigureAwait(true);
             // Hands off to the detached helper and shuts Firepit down. OnClosing
             // still runs first (tabs persisted, sessions disposed cleanly).
@@ -195,7 +196,7 @@ public partial class MainWindow
         {
             _updateInstallInProgress = false;
             Log.Error(ex, "Update install failed");
-            ShowToast($"Update fehlgeschlagen: {ex.Message}", isError: true);
+            ShowToast($"Update failed: {ex.Message}", isError: true);
         }
     }
 
@@ -208,7 +209,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             Log.Warning(ex, "Could not open release page {Url}", url);
-            ShowToast("Konnte die Release-Seite nicht öffnen.", isError: true);
+            ShowToast("Couldn't open the release page.", isError: true);
         }
     }
 
