@@ -137,6 +137,11 @@ public sealed class SessionTab : IAsyncDisposable
         _toolbar.QuickLinkClicked += (_, link) => OpenQuickLink(link);
         _toolbar.CommandClicked += (_, cmd) => RunCommand(cmd);
         _toolbar.CommandStopRequested += (_, cmd) => StopCommand(cmd);
+        // After any toolbar action, push focus back to the terminal so typing
+        // continues at the prompt instead of bouncing off a button that's
+        // still focused. Routed-event delivery is synchronous, so by the time
+        // this fires the action has already run (incl. any modal close).
+        _toolbar.FocusReturnRequested += (_, _) => FocusTerminal();
         _toolbar.SetQuickLinks(_quickLinks.ResolveForProject(context));
         _toolbar.SetCommands(initialConfig?.Commands ?? [], _commandRunner.IsAlive);
 

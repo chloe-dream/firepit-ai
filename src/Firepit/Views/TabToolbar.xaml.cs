@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -17,7 +18,21 @@ public partial class TabToolbar : UserControl
     public TabToolbar()
     {
         InitializeComponent();
+        // Catch every Button-Click that bubbles up through the toolbar (static
+        // toolbar buttons + dynamic Quick-links + Commands) and ask the host
+        // to return focus to the terminal. Routed-event delivery is synchronous,
+        // so for handlers that open a modal (Inbox), this fires only after the
+        // modal closes — exactly the moment we want the terminal to take focus.
+        // Context-menu items live in a separate visual tree and don't bubble
+        // here; those re-raise the event themselves.
+        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, _) => RequestFocusReturn()));
     }
+
+    /// <summary>Raised after any toolbar action so the host can return focus
+    /// to the terminal — buttons shouldn't keep the keyboard focus.</summary>
+    public event EventHandler? FocusReturnRequested;
+
+    private void RequestFocusReturn() => FocusReturnRequested?.Invoke(this, EventArgs.Empty);
 
     public event EventHandler? RekindleRequested;
     public event EventHandler? ResumeRequested;
@@ -122,6 +137,7 @@ public partial class TabToolbar : UserControl
         {
             CommandStopRequested?.Invoke(this, cmd);
         }
+        RequestFocusReturn();
     }
 
     private static string BuildCommandTooltip(ProjectCommand cmd, bool running = false)
@@ -287,8 +303,17 @@ public partial class TabToolbar : UserControl
         ShellRequested?.Invoke(this, elevated);
     }
 
-    private void OnShellOpenMenuClick(object sender, RoutedEventArgs e)  => ShellRequested?.Invoke(this, false);
-    private void OnShellAdminMenuClick(object sender, RoutedEventArgs e) => ShellRequested?.Invoke(this, true);
+    private void OnShellOpenMenuClick(object sender, RoutedEventArgs e)
+    {
+        ShellRequested?.Invoke(this, false);
+        RequestFocusReturn();
+    }
+
+    private void OnShellAdminMenuClick(object sender, RoutedEventArgs e)
+    {
+        ShellRequested?.Invoke(this, true);
+        RequestFocusReturn();
+    }
 
     private void OnQuickLinkClick(object sender, RoutedEventArgs e)
     {
