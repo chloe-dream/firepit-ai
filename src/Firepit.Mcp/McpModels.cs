@@ -41,6 +41,29 @@ public sealed record InboxListResult(
     string Project,
     IReadOnlyList<InboxMessage> Messages);
 
+/// <summary>One toolbar command as exposed by firepit_list_commands. Mirrors
+/// ProjectCommand but flattens the type discriminator to a string and drops
+/// fields that don't apply to the current type so agents see a clean payload.</summary>
+public sealed record CommandSummary(
+    string Name,
+    string Type,
+    string? Icon,
+    string? Command,
+    IReadOnlyList<string>? Args,
+    string? Prompt,
+    string? Url,
+    string? Cwd,
+    IReadOnlyDictionary<string, string?>? Env,
+    bool? Elevated,
+    bool? Confirm,
+    string? Window,
+    bool? LongRunning,
+    bool? Disabled);
+
+public sealed record CommandListResult(
+    string Project,
+    IReadOnlyList<CommandSummary> Commands);
+
 /// <summary>
 /// Payload for firepit_add_command. Mirrors ProjectCommand 1:1 but uses string
 /// for the type discriminator so the wire layer doesn't carry a Core enum.

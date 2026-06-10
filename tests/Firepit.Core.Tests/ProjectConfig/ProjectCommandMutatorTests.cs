@@ -69,4 +69,68 @@ public class ProjectCommandMutatorTests
         var result = ProjectCommandMutator.Upsert(Array.Empty<ProjectCommand>(), Shell("Tests", "pwsh"));
         Assert.Single(result);
     }
+
+    [Fact]
+    public void RemoveByName_DropsMatch_PreservesOthersInOrder()
+    {
+        var existing = new[]
+        {
+            Shell("Tests", "pwsh"),
+            Shell("Dev",   "npm"),
+            Shell("Build", "dotnet"),
+        };
+
+        var (result, removed) = ProjectCommandMutator.RemoveByName(existing, "Dev");
+
+        Assert.True(removed);
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Tests", result[0].Name);
+        Assert.Equal("Build", result[1].Name);
+    }
+
+    [Fact]
+    public void RemoveByName_CaseInsensitiveMatch()
+    {
+        var existing = new[] { Shell("Dev", "npm") };
+        var (result, removed) = ProjectCommandMutator.RemoveByName(existing, "DEV");
+        Assert.True(removed);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void RemoveByName_UnknownName_ReturnsUnchangedAndFalse()
+    {
+        var existing = new[] { Shell("Dev", "npm") };
+        var (result, removed) = ProjectCommandMutator.RemoveByName(existing, "Ghost");
+        Assert.False(removed);
+        Assert.Single(result);
+        Assert.Equal("Dev", result[0].Name);
+    }
+
+    [Fact]
+    public void RemoveByName_NullExistingList_ReturnsEmptyAndFalse()
+    {
+        var (result, removed) = ProjectCommandMutator.RemoveByName(null, "Dev");
+        Assert.False(removed);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void RemoveByName_OnlyFirstDuplicateRemoved()
+    {
+        // Defensive: shouldn't happen in practice (Upsert prevents dupes), but if a
+        // hand-edited config has two same-named entries, we remove just the first
+        // so the user notices and cleans up the other one explicitly.
+        var existing = new[]
+        {
+            Shell("Dev", "npm"),
+            Shell("Dev", "pnpm"),
+        };
+
+        var (result, removed) = ProjectCommandMutator.RemoveByName(existing, "Dev");
+
+        Assert.True(removed);
+        Assert.Single(result);
+        Assert.Equal("pnpm", result[0].Command);
+    }
 }

@@ -341,6 +341,76 @@ public partial class MainWindow : IMcpBackend
                 $"{(replaced ? "Updated" : "Added")} command '{spec.Name}' in {project.Name}");
         });
 
+    public Task<CommandListResult> ListProjectCommandsAsync(string projectName) =>
+        OnDispatcherAsync(() =>
+        {
+            var project = FindProjectByName(projectName);
+            if (project is null)
+                return new CommandListResult(projectName, Array.Empty<CommandSummary>());
+
+            var config   = SafeLoadProjectConfig(project.Path);
+            var commands = config?.Commands ?? Array.Empty<ProjectCommand>();
+            var summaries = commands.Select(ToSummary).ToArray();
+            return new CommandListResult(project.Name, summaries);
+        });
+
+    public Task<ToolCallResult> RemoveProjectCommandAsync(string projectName, string commandName) =>
+        OnDispatcherAsync(() =>
+        {
+            var project = FindProjectByName(projectName);
+            if (project is null) return new ToolCallResult(false, $"Unknown project: {projectName}");
+
+            if (string.IsNullOrWhiteSpace(commandName))
+                return new ToolCallResult(false, "command 'name' is required and cannot be empty");
+
+            var existing = SafeLoadProjectConfig(project.Path);
+            if (existing is null || existing.Commands is null || existing.Commands.Count == 0)
+            {
+                return new ToolCallResult(true, $"No command '{commandName}' to remove in {project.Name} (nothing configured)");
+            }
+
+            var (updatedCommands, removed) = ProjectCommandMutator.RemoveByName(existing.Commands, commandName);
+            if (!removed)
+            {
+                return new ToolCallResult(true, $"No command '{commandName}' in {project.Name} (nothing to remove)");
+            }
+
+            try
+            {
+                _projectConfigStore.Save(project.Path, existing with { Commands = updatedCommands });
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "RemoveProjectCommand: failed to save config for {Project}", project.Name);
+                return new ToolCallResult(false, $"Could not write .firepit/config.json: {ex.Message}");
+            }
+
+            Log.Information("MCP remove_command: '{Name}' from {Project}", commandName, project.Name);
+            return new ToolCallResult(true, $"Removed command '{commandName}' from {project.Name}");
+        });
+
+    private static CommandSummary ToSummary(ProjectCommand c) => new(
+        Name:        c.Name,
+        Type:        c.Type switch
+        {
+            ProjectCommandType.Shell        => "shell",
+            ProjectCommandType.ClaudePrompt => "claude-prompt",
+            ProjectCommandType.Url          => "url",
+            _                               => c.Type.ToString().ToLowerInvariant(),
+        },
+        Icon:        c.Icon,
+        Command:     c.Command,
+        Args:        c.Args,
+        Prompt:      c.Prompt,
+        Url:         c.Url,
+        Cwd:         c.Cwd,
+        Env:         c.Env,
+        Elevated:    c.Elevated,
+        Confirm:     c.Confirm,
+        Window:      c.Window,
+        LongRunning: c.LongRunning,
+        Disabled:    c.Disabled);
+
     public Task<InboxWriteResult> SendInboxAsync(string fromProject, string toProject,
                                                  string subject, string body, string priority) =>
         OnDispatcherAsync(() =>

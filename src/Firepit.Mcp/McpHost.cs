@@ -348,6 +348,27 @@ public sealed class McpHost : IDisposable
                 var result = await _backend.AddProjectCommandAsync(projectName, spec);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
             }
+            case "firepit_list_commands":
+            {
+                var projectName = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(projectName)) projectName = ctx.ProjectName;
+                if (string.IsNullOrEmpty(projectName))
+                    return BuildErrorResponse(id, -32602, "missing 'projectName' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var result = await _backend.ListProjectCommandsAsync(projectName);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.CommandListResult)));
+            }
+            case "firepit_remove_command":
+            {
+                var projectName = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(projectName)) projectName = ctx.ProjectName;
+                if (string.IsNullOrEmpty(projectName))
+                    return BuildErrorResponse(id, -32602, "missing 'projectName' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var cmdName = args["name"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(cmdName))
+                    return BuildErrorResponse(id, -32602, "missing 'name'");
+                var result = await _backend.RemoveProjectCommandAsync(projectName, cmdName);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
+            }
             default:
                 return BuildErrorResponse(id, -32601, $"Unknown tool: {name}");
         }

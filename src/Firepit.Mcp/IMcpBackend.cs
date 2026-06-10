@@ -37,4 +37,14 @@ public interface IMcpBackend
     /// picks up the change and hot-reloads the toolbar via
     /// SessionTab.RefreshFromConfigAsync — no extra plumbing needed here.</summary>
     Task<ToolCallResult>              AddProjectCommandAsync(string projectName, AddCommandSpec spec);
+
+    /// <summary>Return the current toolbar commands list for a project (empty if
+    /// none configured). Read-only; lets agents discover what's already wired
+    /// without parsing the JSONC file themselves.</summary>
+    Task<CommandListResult>           ListProjectCommandsAsync(string projectName);
+
+    /// <summary>Remove a toolbar command by name (case-insensitive). Idempotent —
+    /// if the name doesn't exist, returns Ok with a "not found" message. Same
+    /// hot-reload path as Add.</summary>
+    Task<ToolCallResult>              RemoveProjectCommandAsync(string projectName, string commandName);
 }

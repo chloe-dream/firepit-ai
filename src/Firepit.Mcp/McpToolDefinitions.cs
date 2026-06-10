@@ -122,12 +122,14 @@ internal static class McpToolDefinitions
             """),
 
         new("firepit_add_command",
-            "Add (or replace by name) a toolbar/Run button in a project's .firepit/config.json " +
+            "Add (or replace by name — this is an UPSERT, calling it with an existing 'name' " +
+            "replaces that button in place) a toolbar/Run button in a project's .firepit/config.json " +
             "commands[]. Defaults to the caller's own project. Hot-reloads immediately — no restart. " +
             "Types: 'shell' spawns command+args; 'claude-prompt' pastes prompt into the live session; " +
-            "'url' opens a browser. Note: this overwrites the JSONC file via the structured " +
-            "serializer; the scaffold's tour-of-knobs comments are normalised away on first use " +
-            "(the tool's input schema is the canonical reference from then on).",
+            "'url' opens a browser. To delete a button, use firepit_remove_command. To list " +
+            "current buttons, use firepit_list_commands. Note: this overwrites the JSONC file via " +
+            "the structured serializer; the scaffold's tour-of-knobs comments are normalised away " +
+            "on first use (the tool's input schema is the canonical reference from then on).",
             """
             {
               "type": "object",
@@ -148,6 +150,36 @@ internal static class McpToolDefinitions
                 "longRunning": { "type": "boolean", "description": "shell: live running-indicator + right-click Stop kills the tree. Pair with reuse:<id> for watchers (npm run dev)." }
               },
               "required": ["name", "type"],
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_list_commands",
+            "List a project's current toolbar commands (the entries in .firepit/config.json " +
+            "commands[]). Defaults to the caller's own project. Read-only — covers 'find' too " +
+            "via client-side filtering. Returns name/type/icon plus the type-specific fields.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "projectName": { "type": "string", "description": "Project to inspect; omit for the caller's own project." }
+              },
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_remove_command",
+            "Remove a toolbar command by name (case-insensitive). Idempotent — removing a name " +
+            "that doesn't exist returns Ok with a 'not found' note. Defaults to the caller's " +
+            "own project. Hot-reloads immediately.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "name":        { "type": "string", "description": "Button label to remove." },
+                "projectName": { "type": "string", "description": "Project to remove from; omit for the caller's own project." }
+              },
+              "required": ["name"],
               "additionalProperties": false
             }
             """),
