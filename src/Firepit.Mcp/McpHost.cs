@@ -317,9 +317,63 @@ public sealed class McpHost : IDisposable
                 var result = await _backend.SendInboxAsync(fromProject, toProject, subject, body, priority);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.InboxWriteResult)));
             }
+            case "firepit_add_command":
+            {
+                var projectName = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(projectName)) projectName = ctx.ProjectName;
+                if (string.IsNullOrEmpty(projectName))
+                    return BuildErrorResponse(id, -32602, "missing 'projectName' (and caller did not supply FIREPIT_PROJECT_NAME)");
+
+                var cmdName = args["name"]?.GetValue<string>();
+                var type    = args["type"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(cmdName))
+                    return BuildErrorResponse(id, -32602, "missing 'name'");
+                if (string.IsNullOrEmpty(type))
+                    return BuildErrorResponse(id, -32602, "missing 'type'");
+
+                var spec = new AddCommandSpec(
+                    Name:        cmdName,
+                    Type:        type,
+                    Icon:        args["icon"]?.GetValue<string?>(),
+                    Command:     args["command"]?.GetValue<string?>(),
+                    Args:        ReadStringArray(args["args"]),
+                    Prompt:      args["prompt"]?.GetValue<string?>(),
+                    Url:         args["url"]?.GetValue<string?>(),
+                    Cwd:         args["cwd"]?.GetValue<string?>(),
+                    Env:         ReadStringMap(args["env"]),
+                    Elevated:    args["elevated"]?.GetValue<bool?>(),
+                    Confirm:     args["confirm"]?.GetValue<bool?>(),
+                    Window:      args["window"]?.GetValue<string?>(),
+                    LongRunning: args["longRunning"]?.GetValue<bool?>());
+                var result = await _backend.AddProjectCommandAsync(projectName, spec);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
+            }
             default:
                 return BuildErrorResponse(id, -32601, $"Unknown tool: {name}");
         }
+    }
+
+    private static IReadOnlyList<string>? ReadStringArray(JsonNode? node)
+    {
+        if (node is not JsonArray arr) return null;
+        var list = new List<string>(arr.Count);
+        foreach (var item in arr)
+        {
+            if (item is null) continue;
+            list.Add(item.GetValue<string>());
+        }
+        return list;
+    }
+
+    private static IReadOnlyDictionary<string, string?>? ReadStringMap(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var map = new Dictionary<string, string?>(obj.Count);
+        foreach (var (key, value) in obj)
+        {
+            map[key] = value?.GetValue<string?>();
+        }
+        return map;
     }
 
     /// <summary>
@@ -376,6 +430,21 @@ public sealed class McpHost : IDisposable
             case "firepit://settings":
                 text = await _backend.GetRedactedSettingsAsync();
                 break;
+            case "firepit://config-schema":
+                text = Firepit.Core.ProjectConfig.ProjectConfigScaffold
+                    .BuildScaffold("<projectId>");
+                return BuildResult(id, new JsonObject
+                {
+                    ["contents"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["uri"]      = uri,
+                            ["mimeType"] = "application/jsonc",
+                            ["text"]     = text,
+                        },
+                    },
+                });
             default:
                 return BuildErrorResponse(id, -32602, $"unknown resource uri: {uri}");
         }

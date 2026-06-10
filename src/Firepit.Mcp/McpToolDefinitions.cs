@@ -120,6 +120,37 @@ internal static class McpToolDefinitions
               "additionalProperties": false
             }
             """),
+
+        new("firepit_add_command",
+            "Add (or replace by name) a toolbar/Run button in a project's .firepit/config.json " +
+            "commands[]. Defaults to the caller's own project. Hot-reloads immediately — no restart. " +
+            "Types: 'shell' spawns command+args; 'claude-prompt' pastes prompt into the live session; " +
+            "'url' opens a browser. Note: this overwrites the JSONC file via the structured " +
+            "serializer; the scaffold's tour-of-knobs comments are normalised away on first use " +
+            "(the tool's input schema is the canonical reference from then on).",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "name":        { "type": "string", "description": "Button label; unique within the project (re-using a name updates that button)." },
+                "type":        { "type": "string", "enum": ["shell", "claude-prompt", "url"] },
+                "projectName": { "type": "string", "description": "Project to add to; omit for the caller's own project." },
+                "icon":        { "type": "string" },
+                "command":     { "type": "string", "description": "shell: executable, e.g. 'npm'." },
+                "args":        { "type": "array", "items": { "type": "string" }, "description": "shell: e.g. ['run','dev']." },
+                "prompt":      { "type": "string", "description": "claude-prompt: text injected into the PTY." },
+                "url":         { "type": "string", "description": "url: target; {projectName}/{projectPath} substituted." },
+                "cwd":         { "type": "string", "description": "shell: working dir relative to project root." },
+                "env":         { "type": "object", "additionalProperties": { "type": "string" }, "description": "shell: extra env on the child." },
+                "elevated":    { "type": "boolean", "description": "shell: Windows UAC (run as admin)." },
+                "confirm":     { "type": "boolean", "description": "shell: modal 'Run?' before spawning." },
+                "window":      { "type": "string", "description": "'new' (default) | 'reuse:<id>' (2nd click focuses existing window) | 'inline' (write into this tab's PTY)." },
+                "longRunning": { "type": "boolean", "description": "shell: live running-indicator + right-click Stop kills the tree. Pair with reuse:<id> for watchers (npm run dev)." }
+              },
+              "required": ["name", "type"],
+              "additionalProperties": false
+            }
+            """),
     ];
 }
 
@@ -142,5 +173,11 @@ internal static class McpResourceDefinitions
             "Global Firepit settings.json with secrets redacted (cred-references opaque, " +
             "key/token/secret/password keys masked).",
             "application/json"),
+        new("firepit://config-schema",
+            "Project config schema",
+            "Canonical scaffold/schema for .firepit/config.json (JSONC with the full tour of knobs: " +
+            "quickLinks, mcpActivations, agent, session, commands, scheduledJobs, runs). Read this " +
+            "instead of guessing the shape when hand-editing a project's config.json.",
+            "application/jsonc"),
     ];
 }

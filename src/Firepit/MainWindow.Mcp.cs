@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Firepit.Core.ProjectConfig;
 using Firepit.Core.Settings;
 using Firepit.Mcp;
 using Firepit.Views;
@@ -262,6 +263,83 @@ public partial class MainWindow : IMcpBackend
         var body = string.Join('\n', lines.Skip(bodyStart));
         return (fm, body);
     }
+
+    public Task<ToolCallResult> AddProjectCommandAsync(string projectName, AddCommandSpec spec) =>
+        OnDispatcherAsync(() =>
+        {
+            var project = FindProjectByName(projectName);
+            if (project is null) return new ToolCallResult(false, $"Unknown project: {projectName}");
+
+            if (string.IsNullOrWhiteSpace(spec.Name))
+                return new ToolCallResult(false, "command 'name' is required and cannot be empty");
+
+            ProjectCommandType type;
+            switch ((spec.Type ?? string.Empty).ToLowerInvariant())
+            {
+                case "shell":
+                    if (string.IsNullOrWhiteSpace(spec.Command))
+                        return new ToolCallResult(false, "shell commands require 'command'");
+                    type = ProjectCommandType.Shell;
+                    break;
+                case "claude-prompt":
+                    if (string.IsNullOrWhiteSpace(spec.Prompt))
+                        return new ToolCallResult(false, "claude-prompt commands require 'prompt'");
+                    type = ProjectCommandType.ClaudePrompt;
+                    break;
+                case "url":
+                    if (string.IsNullOrWhiteSpace(spec.Url))
+                        return new ToolCallResult(false, "url commands require 'url'");
+                    type = ProjectCommandType.Url;
+                    break;
+                default:
+                    return new ToolCallResult(false,
+                        $"Unknown command type '{spec.Type}'. Expected: shell | claude-prompt | url");
+            }
+
+            // Existing config — or scaffold one. EnsureScaffold no-ops if the
+            // file already exists, otherwise drops the commented tour so first-
+            // time use still leaves the project in a hand-editable state.
+            ProjectConfigScaffold.EnsureScaffold(project.Path, project.Name);
+            var existing = SafeLoadProjectConfig(project.Path)
+                           ?? new Firepit.Core.ProjectConfig.ProjectConfig();
+
+            var newCommand = new ProjectCommand(
+                Name:        spec.Name,
+                Type:        type,
+                Icon:        spec.Icon,
+                Command:     spec.Command,
+                Args:        spec.Args,
+                Prompt:      spec.Prompt,
+                Url:         spec.Url,
+                Cwd:         spec.Cwd,
+                Env:         spec.Env,
+                Elevated:    spec.Elevated,
+                Confirm:     spec.Confirm,
+                Window:      spec.Window,
+                LongRunning: spec.LongRunning);
+
+            var beforeCount = existing.Commands?.Count ?? 0;
+            var merged      = ProjectCommandMutator.Upsert(existing.Commands, newCommand);
+            var replaced    = merged.Count == beforeCount;
+
+            try
+            {
+                _projectConfigStore.Save(project.Path, existing with { Commands = merged });
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "AddProjectCommand: failed to save config for {Project}", project.Name);
+                return new ToolCallResult(false, $"Could not write .firepit/config.json: {ex.Message}");
+            }
+
+            // The IProjectConfigWatcher tied to this project (see SetupProjectConfigWatcher)
+            // observes the file write and calls SessionTab.RefreshFromConfigAsync — toolbar
+            // hot-reloads without any extra plumbing here.
+            Log.Information("MCP add_command: {Action} '{Name}' ({Type}) in {Project}",
+                replaced ? "replaced" : "added", spec.Name, type, project.Name);
+            return new ToolCallResult(true,
+                $"{(replaced ? "Updated" : "Added")} command '{spec.Name}' in {project.Name}");
+        });
 
     public Task<InboxWriteResult> SendInboxAsync(string fromProject, string toProject,
                                                  string subject, string body, string priority) =>

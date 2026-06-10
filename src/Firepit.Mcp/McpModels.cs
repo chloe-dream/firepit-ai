@@ -41,6 +41,26 @@ public sealed record InboxListResult(
     string Project,
     IReadOnlyList<InboxMessage> Messages);
 
+/// <summary>
+/// Payload for firepit_add_command. Mirrors ProjectCommand 1:1 but uses string
+/// for the type discriminator so the wire layer doesn't carry a Core enum.
+/// The handler validates type + required fields per type.
+/// </summary>
+public sealed record AddCommandSpec(
+    string Name,
+    string Type,
+    string? Icon = null,
+    string? Command = null,
+    IReadOnlyList<string>? Args = null,
+    string? Prompt = null,
+    string? Url = null,
+    string? Cwd = null,
+    IReadOnlyDictionary<string, string?>? Env = null,
+    bool? Elevated = null,
+    bool? Confirm = null,
+    string? Window = null,
+    bool? LongRunning = null);
+
 // Resource definition returned by resources/list. Tool definitions live as
 // internal records next to the catalog (McpToolDefinitionRaw) — they carry
 // the inline JSON schema string rather than a parsed JsonElement.

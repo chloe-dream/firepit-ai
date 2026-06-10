@@ -31,4 +31,10 @@ public interface IMcpBackend
     /// into the sibling processed/ subfolder. Idempotent — already-processed
     /// (or missing) files return Ok=false with a Message.</summary>
     Task<ToolCallResult>              CompleteInboxAsync(string projectName, string id);
+
+    /// <summary>Append (or replace by name) a toolbar command in
+    /// &lt;projectPath&gt;/.firepit/config.json. The existing FileSystemWatcher
+    /// picks up the change and hot-reloads the toolbar via
+    /// SessionTab.RefreshFromConfigAsync — no extra plumbing needed here.</summary>
+    Task<ToolCallResult>              AddProjectCommandAsync(string projectName, AddCommandSpec spec);
 }
