@@ -37,7 +37,7 @@ public class JsonJobHistoryStoreTests : IDisposable
     [Fact]
     public async Task RecordAsync_WritesFileWithSortableTimestampName()
     {
-        var store = new JsonJobHistoryStore();
+        var store = new JsonJobHistoryStore(retention: TimeSpan.FromDays(3650));
         await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,
             MakeOutcome(), CancellationToken.None);
 
@@ -50,7 +50,7 @@ public class JsonJobHistoryStoreTests : IDisposable
     [Fact]
     public async Task RecordedFile_RoundtripsAllFields()
     {
-        var store = new JsonJobHistoryStore();
+        var store = new JsonJobHistoryStore(retention: TimeSpan.FromDays(3650));
         await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Manual,
             MakeOutcome(), CancellationToken.None);
 
@@ -71,7 +71,7 @@ public class JsonJobHistoryStoreTests : IDisposable
     [Fact]
     public async Task GetLastRunStartedAt_ReturnsMostRecentTimestamp()
     {
-        var store = new JsonJobHistoryStore();
+        var store = new JsonJobHistoryStore(retention: TimeSpan.FromDays(3650));
         var older  = new DateTimeOffset(2026, 5, 13, 8, 0, 0, TimeSpan.Zero);
         var newer  = new DateTimeOffset(2026, 5, 13, 9, 0, 0, TimeSpan.Zero);
 
@@ -109,7 +109,7 @@ public class JsonJobHistoryStoreTests : IDisposable
         """;
         await File.WriteAllTextAsync(brokenPath, brokenRecord);
 
-        var store = new JsonJobHistoryStore();
+        var store = new JsonJobHistoryStore(retention: TimeSpan.FromDays(3650));
         await store.RecoverInterruptedAsync(_projectPath, CancellationToken.None);
 
         var reloaded = store.Load(_projectPath, "check-mails");
@@ -173,7 +173,7 @@ public class JsonJobHistoryStoreTests : IDisposable
     [Fact]
     public async Task SameSecondRuns_DoNotCollide()
     {
-        var store = new JsonJobHistoryStore();
+        var store = new JsonJobHistoryStore(retention: TimeSpan.FromDays(3650));
         var ts = new DateTimeOffset(2026, 5, 13, 8, 30, 0, TimeSpan.Zero);
 
         await store.RecordAsync(_projectPath, "demo", "check-mails", "/check-mails", JobTrigger.Scheduled,

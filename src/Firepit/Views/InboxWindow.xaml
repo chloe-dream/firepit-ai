@@ -1,0 +1,242 @@
+<Window x:Class="Firepit.Views.InboxWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Inbox"
+        Width="560"
+        Height="460"
+        MinWidth="420"
+        MinHeight="320"
+        Background="#1A1612"
+        Icon="/firepit.ico"
+        BorderBrush="#332B22"
+        BorderThickness="1"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome
+            CaptionHeight="32"
+            CornerRadius="0"
+            GlassFrameThickness="0"
+            ResizeBorderThickness="6"
+            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <Style x:Key="InboxButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#A89F92" />
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
+            <Setter Property="FontSize" Value="{DynamicResource BaseFontSize}" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#221C16" TargetName="Bd" />
+                                <Setter Property="Foreground" Value="#E8E2D8" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#2A211A" TargetName="Bd" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="InboxPrimaryButton" TargetType="Button" BasedOn="{StaticResource InboxButton}">
+            <Setter Property="Background" Value="#2A211A" />
+            <Setter Property="Foreground" Value="#F5C97B" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#332821" />
+                    <Setter Property="Foreground" Value="#FFD89A" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="InboxDangerButton" TargetType="Button" BasedOn="{StaticResource InboxButton}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#E58A78" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition x:Name="CaptionRow" Height="32" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Caption -->
+        <Grid Grid.Row="0" Background="#0A0805">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="CaptionText"
+                       Grid.Column="0"
+                       Foreground="#A89F92"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource BaseFontSize}"
+                       VerticalAlignment="Center"
+                       Margin="14,0,0,0" />
+            <Button Grid.Column="1"
+                    Style="{StaticResource CaptionCloseButton}"
+                    Width="{DynamicResource DialogCaptionPixelHeight}"
+                    Height="{DynamicResource DialogCaptionPixelHeight}"
+                    Click="OnCloseClick"
+                    ToolTip="Close" />
+        </Grid>
+
+        <!-- Position + meta line -->
+        <Grid Grid.Row="1" Margin="20,16,20,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="PriorityDot"
+                       Grid.Column="0"
+                       Text="●"
+                       FontSize="14"
+                       VerticalAlignment="Center"
+                       Margin="0,0,8,0"
+                       Foreground="#7A6F60" />
+            <TextBlock x:Name="MetaText"
+                       Grid.Column="1"
+                       Foreground="#7A6F60"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource SmallFontSize}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="PositionText"
+                       Grid.Column="2"
+                       Foreground="#7A6F60"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource SmallFontSize}"
+                       VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Headers (from/subject) -->
+        <Grid Grid.Row="2" Margin="20,10,20,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="From:"
+                       Foreground="#7A6F60"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource BaseFontSize}"
+                       Margin="0,0,10,2" />
+            <TextBlock x:Name="FromText" Grid.Row="0" Grid.Column="1"
+                       Foreground="#E8E2D8"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource BaseFontSize}"
+                       TextTrimming="CharacterEllipsis"
+                       Margin="0,0,0,2" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Subject:"
+                       Foreground="#7A6F60"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource BaseFontSize}"
+                       Margin="0,0,10,0" />
+            <TextBlock x:Name="SubjectText" Grid.Row="1" Grid.Column="1"
+                       Foreground="#F5C97B"
+                       FontFamily="Cascadia Code, Consolas, Courier New"
+                       FontSize="{DynamicResource BaseFontSize}"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" />
+        </Grid>
+
+        <!-- Body -->
+        <Border Grid.Row="3" Margin="20,4,20,12"
+                Background="#0F0C09"
+                BorderBrush="#332B22"
+                BorderThickness="1"
+                CornerRadius="3">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto"
+                          Padding="12,10">
+                <TextBox x:Name="BodyText"
+                         IsReadOnly="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="#D4CCBE"
+                         FontFamily="Cascadia Code, Consolas, Courier New"
+                         FontSize="{DynamicResource BaseFontSize}"
+                         TextWrapping="Wrap"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Disabled"
+                         HorizontalScrollBarVisibility="Disabled" />
+            </ScrollViewer>
+        </Border>
+
+        <!-- Action row -->
+        <Grid Grid.Row="4" Margin="20,0,20,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button x:Name="PrevButton"
+                        Style="{StaticResource InboxButton}"
+                        Margin="0,0,6,0"
+                        Click="OnPrevClick"
+                        ToolTip="Previous message">
+                    <TextBlock Text="‹ Prev" />
+                </Button>
+                <Button x:Name="NextButton"
+                        Style="{StaticResource InboxButton}"
+                        Click="OnNextClick"
+                        ToolTip="Next message">
+                    <TextBlock Text="Next ›" />
+                </Button>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="DeleteButton"
+                        Style="{StaticResource InboxDangerButton}"
+                        Margin="0,0,6,0"
+                        Click="OnDeleteClick"
+                        ToolTip="Delete this message (file will be removed)">
+                    <TextBlock Text="Delete" />
+                </Button>
+                <Button x:Name="MarkDoneButton"
+                        Style="{StaticResource InboxButton}"
+                        Margin="0,0,6,0"
+                        Click="OnMarkDoneClick"
+                        ToolTip="Move to .firepit/inbox/processed/ — you've seen it, no action needed">
+                    <TextBlock Text="Mark done" />
+                </Button>
+                <Button x:Name="SendToClaudeButton"
+                        Style="{StaticResource InboxPrimaryButton}"
+                        Click="OnSendToClaudeClick"
+                        ToolTip="Paste this message into the running session and ask Claude to act on it">
+                    <TextBlock Text="Send to Claude" />
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

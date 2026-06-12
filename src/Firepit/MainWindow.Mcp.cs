@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Firepit.Core.Inbox;
 using Firepit.Core.ProjectConfig;
 using Firepit.Core.Settings;
 using Firepit.Mcp;
@@ -159,14 +160,14 @@ public partial class MainWindow : IMcpBackend
                 try
                 {
                     var raw = File.ReadAllText(file);
-                    var parsed = ParseFrontmatter(raw);
+                    var parsed = InboxFrontmatterParser.Parse(raw);
                     messages.Add(new InboxMessage(
                         Id:       Path.GetFileName(file),
-                        From:     parsed.frontmatter.GetValueOrDefault("from"),
-                        Subject:  parsed.frontmatter.GetValueOrDefault("subject"),
-                        Priority: parsed.frontmatter.GetValueOrDefault("priority"),
-                        Date:     parsed.frontmatter.GetValueOrDefault("date"),
-                        Body:     parsed.body));
+                        From:     parsed.Frontmatter.GetValueOrDefault("from"),
+                        Subject:  parsed.Frontmatter.GetValueOrDefault("subject"),
+                        Priority: parsed.Frontmatter.GetValueOrDefault("priority"),
+                        Date:     parsed.Frontmatter.GetValueOrDefault("date"),
+                        Body:     parsed.Body));
                 }
                 catch (Exception ex)
                 {
@@ -230,39 +231,35 @@ public partial class MainWindow : IMcpBackend
     /// shape (no frontmatter at all). Values are trimmed; nested structures
     /// aren't supported because Firepit only emits flat key/value pairs.
     /// </summary>
-    private static (Dictionary<string, string> frontmatter, string body) ParseFrontmatter(string raw)
-    {
-        var fm = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (!raw.StartsWith("---", StringComparison.Ordinal))
+    public Task<ToolCallResult> DeleteInboxMessageAsync(string projectName, string id) =>
+        OnDispatcherAsync(() =>
         {
-            return (fm, raw);
-        }
-        var lines = raw.Split('\n');
-        var endIdx = -1;
-        for (var i = 1; i < lines.Length; i++)
-        {
-            if (lines[i].TrimEnd('\r') == "---") { endIdx = i; break; }
-        }
-        if (endIdx < 0) return (fm, raw);
+            var project = FindProjectByName(projectName);
+            if (project is null) return new ToolCallResult(false, $"Unknown project: {projectName}");
 
-        for (var i = 1; i < endIdx; i++)
-        {
-            var line = lines[i].TrimEnd('\r');
-            var sep  = line.IndexOf(':');
-            if (sep <= 0) continue;
-            var key = line[..sep].Trim();
-            var val = line[(sep + 1)..].Trim();
-            if (key.Length > 0) fm[key] = val;
-        }
-        // Skip endIdx line itself, then strip a single leading blank line.
-        var bodyStart = endIdx + 1;
-        if (bodyStart < lines.Length && string.IsNullOrWhiteSpace(lines[bodyStart].TrimEnd('\r')))
-        {
-            bodyStart++;
-        }
-        var body = string.Join('\n', lines.Skip(bodyStart));
-        return (fm, body);
-    }
+            if (id.Contains('/') || id.Contains('\\') || id.Contains("..", StringComparison.Ordinal))
+            {
+                return new ToolCallResult(false, $"Invalid id (must be a bare filename): {id}");
+            }
+
+            var source = Path.Combine(project.Path, ".firepit", "inbox", id);
+            if (!File.Exists(source))
+            {
+                return new ToolCallResult(true, $"No such message: {id} (nothing to delete)");
+            }
+
+            try
+            {
+                File.Delete(source);
+                Log.Information("Inbox: deleted {Id} from {Project}", id, project.Name);
+                return new ToolCallResult(true, $"Deleted {id}");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Inbox delete failed for {Id} in {Project}", id, project.Name);
+                return new ToolCallResult(false, ex.Message);
+            }
+        });
 
     public Task<ToolCallResult> AddProjectCommandAsync(string projectName, AddCommandSpec spec) =>
         OnDispatcherAsync(() =>

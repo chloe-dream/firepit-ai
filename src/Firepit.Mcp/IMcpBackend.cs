@@ -32,6 +32,12 @@ public interface IMcpBackend
     /// (or missing) files return Ok=false with a Message.</summary>
     Task<ToolCallResult>              CompleteInboxAsync(string projectName, string id);
 
+    /// <summary>Hard-delete an inbox message file (not the processed-move).
+    /// Used by the Inbox wizard's Delete action. Idempotent — missing files
+    /// return Ok=true with a "nothing to delete" note. Same path-traversal
+    /// guard as Complete: only bare filenames accepted.</summary>
+    Task<ToolCallResult>              DeleteInboxMessageAsync(string projectName, string id);
+
     /// <summary>Append (or replace by name) a toolbar command in
     /// &lt;projectPath&gt;/.firepit/config.json. The existing FileSystemWatcher
     /// picks up the change and hot-reloads the toolbar via
