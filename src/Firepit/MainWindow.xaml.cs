@@ -947,6 +947,15 @@ public partial class MainWindow : Window
 
     private void OnTabSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (Tabs.SelectedItem is TabItem selected)
+        {
+            // Keep the active tab visible when the strip is scrolled past it
+            // (Ctrl+Tab into an off-screen tab, or a freshly-opened tab beyond
+            // the right edge). ScrollViewer honours BringIntoView automatically
+            // because the headers live inside it via the TabControl template.
+            selected.BringIntoView();
+        }
+
         if (Tabs.SelectedItem is TabItem { Tag: SessionTab session })
         {
             ShowTabContent(session);
@@ -1197,6 +1206,22 @@ public partial class MainWindow : Window
     }
 
     private void HideDropIndicator() => TabDropIndicator.Visibility = Visibility.Collapsed;
+
+    /// <summary>
+    /// Vertical mouse wheel over the tab strip → horizontal scroll. WPF's
+    /// ScrollViewer defaults to vertical-only on wheel; we explicitly map
+    /// delta to the horizontal axis here so the user can spin the wheel to
+    /// pan through overflowing tab headers. Step size matches one notch
+    /// (≈120 px), which feels comparable to the per-line scroll of a
+    /// vertical list.
+    /// </summary>
+    private void OnTabsWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+        // Negative delta = wheel toward user = scroll right.
+        sv.ScrollToHorizontalOffset(sv.HorizontalOffset - e.Delta);
+        e.Handled = true;
+    }
 
     private static bool IsInsideCloseButton(DependencyObject origin)
     {

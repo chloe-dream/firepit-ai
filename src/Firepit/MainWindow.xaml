@@ -35,9 +35,8 @@
         <Grid Grid.Row="0" Background="#0A0805">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
@@ -47,6 +46,12 @@
                     Click="OnAboutClick"
                     ToolTip="About Firepit" />
 
+            <!-- Tabs column is '*' so the TabControl never claims more width than
+                 is left between About (col 0) and the right caption panel (col 3).
+                 When many projects are open the header panel overflows and the
+                 ScrollViewer takes over (horizontal scroll bar hidden — wheel +
+                 BringIntoView do the work). Pre-v0.5.31 this column was Auto and
+                 the headers ran into the Min/Max/Close buttons. -->
             <TabControl Grid.Column="1"
                         x:Name="Tabs"
                         Background="Transparent"
@@ -58,10 +63,17 @@
                         SelectionChanged="OnTabSelectionChanged">
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl">
-                        <TabPanel x:Name="HeaderPanel"
-                                  IsItemsHost="True"
-                                  Background="Transparent"
-                                  Margin="0" />
+                        <ScrollViewer x:Name="TabsScrollViewer"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Disabled"
+                                      PreviewMouseWheel="OnTabsWheel"
+                                      Focusable="False"
+                                      shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <TabPanel x:Name="HeaderPanel"
+                                      IsItemsHost="True"
+                                      Background="Transparent"
+                                      Margin="0" />
+                        </ScrollViewer>
                     </ControlTemplate>
                 </TabControl.Template>
                 <TabControl.ItemContainerStyle>
@@ -157,7 +169,7 @@
                        Visibility="Collapsed"
                        IsHitTestVisible="False" />
 
-            <StackPanel Grid.Column="4"
+            <StackPanel Grid.Column="3"
                         Orientation="Horizontal"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
                 <!-- Update badge: an ember pill, hidden until a newer release is
