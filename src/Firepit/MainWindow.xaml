@@ -59,16 +59,23 @@
                         Padding="0"
                         VerticalAlignment="Stretch"
                         HorizontalContentAlignment="Stretch"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         SelectionChanged="OnTabSelectionChanged">
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl">
+                        <!-- IsHitTestVisibleInChrome is set on each TabItem (see
+                             ItemContainerStyle template) — NOT here on the
+                             ScrollViewer/TabControl. Now that the tabs column is
+                             '*' the strip fills the whole caption middle; marking
+                             the container as chrome-hit-test-visible made the
+                             entire empty area interactive, so the window could no
+                             longer be dragged by its caption. Keeping it only on
+                             the tab headers leaves the empty strip as draggable
+                             caption while tabs stay clickable/reorderable. -->
                         <ScrollViewer x:Name="TabsScrollViewer"
                                       HorizontalScrollBarVisibility="Hidden"
                                       VerticalScrollBarVisibility="Disabled"
                                       PreviewMouseWheel="OnTabsWheel"
-                                      Focusable="False"
-                                      shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                                      Focusable="False">
                             <TabPanel x:Name="HeaderPanel"
                                       IsItemsHost="True"
                                       Background="Transparent"
