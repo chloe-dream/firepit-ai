@@ -417,6 +417,10 @@ public sealed class SessionTab : IAsyncDisposable
         // restore) tab honours its persisted PendingResume flag.
         var wasInitialized = _initialized;
         var resume = PendingResume || wasInitialized;
+        // DIAGNOSTIC (v0.5.38): a restart is actually firing — log who/why so
+        // repeated respawns are traceable to their trigger in the log.
+        Log.Information("RestartIfPending firing for {Project}: state={State}, wasInitialized={Init}, resume={Resume}",
+            Context.Name, _detector.State, wasInitialized, resume);
         if (wasInitialized)
         {
             // Dead/Cold state from a prior run (or a cancelled attempt) — tear
@@ -646,6 +650,11 @@ public sealed class SessionTab : IAsyncDisposable
 
     private async Task TeardownSessionAsync()
     {
+        // DIAGNOSTIC (v0.5.38): Firepit is about to kill the current agent
+        // process. Pairs with the pump's exit log to show whether a Dead
+        // session was Firepit-initiated or the agent leaving on its own.
+        Log.Information("Tearing down session for {Project} (state {State}, pid {Pid})",
+            Context.Name, _detector.State, _ptyChannel?.Pid);
         try { _cts?.Cancel(); } catch { /* ignored */ }
         if (_ptyChannel is not null)
         {
@@ -687,9 +696,12 @@ public sealed class SessionTab : IAsyncDisposable
             return;
         }
 
+        var ch = _ptyChannel;
+        var pid = ch.Pid;
+        var faulted = false;
         try
         {
-            await foreach (var chunk in _ptyChannel.ReadAsync(ct))
+            await foreach (var chunk in ch.ReadAsync(ct))
             {
                 _detector.NotifyRead();
                 await _terminalView.WriteAsync(chunk, ct);
@@ -701,12 +713,30 @@ public sealed class SessionTab : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            faulted = true;
+            Log.Warning(ex, "Output pump for {Project} (pid {Pid}) faulted", Context.Name, pid);
             await _content.Dispatcher.InvokeAsync(() => ShowFatal(ex.Message));
         }
         finally
         {
             if (!_disposed)
             {
+                // DIAGNOSTIC (v0.5.38): distinguish an agent that exited on its
+                // own (PTY EOF, no cancellation) from a Firepit-initiated
+                // teardown. The former is the real "session keeps dying"
+                // mystery — log its exit code so we can see WHY claude leaves.
+                if (ct.IsCancellationRequested)
+                {
+                    Log.Information("Output pump for {Project} (pid {Pid}) stopped by teardown", Context.Name, pid);
+                }
+                else if (!faulted)
+                {
+                    int? code = null;
+                    try { code = await ch.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1)); }
+                    catch { /* exit code unavailable */ }
+                    Log.Warning("Agent for {Project} (pid {Pid}) EXITED ON ITS OWN (code {Code}) — session going Dead",
+                        Context.Name, pid, code);
+                }
                 _detector.NotifyExited();
             }
         }
@@ -730,6 +760,13 @@ public sealed class SessionTab : IAsyncDisposable
     {
         try
         {
+            // DIAGNOSTIC (v0.5.38): a degenerate (0-col/0-row) resize from a
+            // transient layout measurement is a suspect for upsetting the
+            // agent/ConPTY — flag it instead of silently forwarding.
+            if (size.Cols <= 0 || size.Rows <= 0)
+            {
+                Log.Warning("Degenerate terminal resize for {Project}: {Cols}x{Rows}", Context.Name, size.Cols, size.Rows);
+            }
             _ptyChannel?.Resize(size.Cols, size.Rows);
         }
         catch (ObjectDisposedException) { }

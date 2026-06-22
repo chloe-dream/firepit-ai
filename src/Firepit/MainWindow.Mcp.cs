@@ -87,6 +87,10 @@ public partial class MainWindow : IMcpBackend
             if (project is null) return new ToolCallResult(false, $"Unknown project: {projectName}");
             if (!_openTabs.TryGetValue(project.Path, out var entry))
                 return new ToolCallResult(false, $"{projectName} has no open tab");
+            // DIAGNOSTIC (v0.5.38): selecting the tab can wake a Dead session
+            // (→ restart). Log every MCP focus so a tool-driven restart storm
+            // is visible in the log.
+            Log.Information("MCP firepit_focus_tab → selecting {Project}", projectName);
             entry.TabItem.IsSelected = true;
             entry.Session.FocusTerminal();
             return new ToolCallResult(true, $"Focused {projectName}");
