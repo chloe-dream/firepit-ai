@@ -85,6 +85,15 @@
                 </TabControl.Template>
                 <TabControl.ItemContainerStyle>
                     <Style TargetType="TabItem">
+                        <!-- IsHitTestVisibleInChrome is an INHERITED attached property.
+                             Setting it on the TabItem makes both the template internals
+                             AND the header content (TabItem.Header = the project-name
+                             StackPanel) inherit it — the header content inherits from its
+                             templated parent (this TabItem), NOT from the template-internal
+                             Grid, so marking only that Grid left the header TEXT as caption
+                             (clicks/hover dead on the text). Each TabItem only spans its own
+                             header, so the empty strip area stays draggable caption. -->
+                        <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
                         <Setter Property="Foreground" Value="#A89F92" />
                         <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Courier New" />
                         <Setter Property="FontSize" Value="{DynamicResource BaseFontSize}" />
