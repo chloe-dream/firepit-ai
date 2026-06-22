@@ -409,12 +409,19 @@ public sealed class SessionTab : IAsyncDisposable
                           || _detector.State == SessionState.Cold;
         if (!needsStart) return;
 
-        var resume = PendingResume;
-        if (_initialized)
+        // A session that already ran (and is now Dead because the agent
+        // process exited) MUST be brought back with --continue, never fresh:
+        // restarting it blank silently throws away the whole conversation, so
+        // reactivating such a tab looked like "the session forgot everything /
+        // is stuck in an old session". Only a never-initialised (deferred-
+        // restore) tab honours its persisted PendingResume flag.
+        var wasInitialized = _initialized;
+        var resume = PendingResume || wasInitialized;
+        if (wasInitialized)
         {
-            // Dead/Cold state from a prior cancelled attempt — tear down the
-            // half-built bits before retrying so StartSessionAsync's early
-            // return guard doesn't keep us stuck.
+            // Dead/Cold state from a prior run (or a cancelled attempt) — tear
+            // down the half-built bits before retrying so StartSessionAsync's
+            // early-return guard doesn't keep us stuck.
             await TeardownSessionAsync();
         }
         await StartSessionAsync(resume);
