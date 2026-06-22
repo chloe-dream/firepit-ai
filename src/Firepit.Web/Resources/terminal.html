@@ -440,37 +440,48 @@
                 try { fitAddon.fit(); fittedVisible = true; } catch (e) { /* ignore */ }
             }
 
-            // Re-fit on (re)show. If the boot fit ran while hidden the cell
-            // metrics were measured at zero size (→ microscopic text); xterm
-            // only re-measures the cell when a font option actually changes
-            // value, so nudge font-family to a string that resolves to the same
-            // fonts (trailing space) and back to force CharSizeService.measure().
-            // Only needed until the first fit while visible succeeds.
-            function recalc() {
-                if (!opened || !terminalVisible()) return;
-                if (!fittedVisible) {
-                    const ff = term.options.fontFamily;
-                    try {
-                        term.options.fontFamily = ff + ' ';
-                        term.options.fontFamily = ff;
-                    } catch (e) { /* ignore */ }
-                }
-                requestAnimationFrame(fitNow);
-                setTimeout(fitNow, 50);
+            // Coalesce resize/reveal "storms" into a SINGLE fit at the final,
+            // stable size. When a tab goes Collapsed→Visible the WebView2 host
+            // resizes the page in several steps as WPF layout settles, and the
+            // ResizeObserver fires for each intermediate size. Fitting on every
+            // callback resized the PTY to a transient wrong size and then again
+            // to the correct one — a visible double-reflow ("refresh") that lost
+            // on-screen context, worst on content-heavy sessions. Debouncing
+            // makes us fit once, after the size stops changing.
+            let fitTimer = null;
+            function scheduleFit() {
+                if (!opened) return;
+                if (fitTimer) clearTimeout(fitTimer);
+                fitTimer = setTimeout(function () {
+                    fitTimer = null;
+                    if (!terminalVisible()) return;
+                    // Force a one-time cell re-measure if the boot fit ran while
+                    // hidden (zero size → microscopic metrics). xterm only
+                    // re-measures the cell when a font option value changes, so
+                    // nudge font-family to an equivalent string and back.
+                    if (!fittedVisible) {
+                        const ff = term.options.fontFamily;
+                        try {
+                            term.options.fontFamily = ff + ' ';
+                            term.options.fontFamily = ff;
+                        } catch (e) { /* ignore */ }
+                    }
+                    fitNow();
+                }, 90);
             }
 
-            window.addEventListener('resize', fitNow);
+            window.addEventListener('resize', scheduleFit);
             document.addEventListener('visibilitychange', function () {
-                if (!document.hidden) recalc();
+                if (!document.hidden) scheduleFit();
             });
             if (typeof ResizeObserver === 'function') {
-                let lastH = 0;
+                // Both the hidden→shown reveal and a live window resize funnel
+                // through the same debounce — intermediate sizes are swallowed,
+                // only the settled size reaches fitAddon.fit().
                 const ro = new ResizeObserver(function () {
                     const el = document.getElementById('terminal');
                     const h = el ? el.clientHeight : 0;
-                    if (h > 0 && lastH === 0) recalc();   // hidden → shown
-                    else if (h > 0) fitNow();             // live resize
-                    lastH = h;
+                    if (h > 0) scheduleFit();
                 });
                 try { ro.observe(document.getElementById('terminal')); } catch (e) { /* ignore */ }
             }
@@ -491,7 +502,7 @@
             // browser rendered first, fit-addon picks a column count for that
             // metric, and once the real font swaps in the lines overflow into
             // the reserved scrollbar gutter. (If the boot cap below opens early,
-            // the fontReady recalc recovers the metrics once the font lands.)
+            // the fontReady refit recovers the metrics once the font lands.)
             function startup() {
                 term.open(document.getElementById('terminal'));
                 opened = true;
@@ -516,7 +527,7 @@
                     .catch(function () { /* font may be missing — proceed with fallback */ })
                 : Promise.resolve();
 
-            fontReady.then(function () { recalc(); });
+            fontReady.then(function () { scheduleFit(); });
             Promise.all([domReady, fontReady]).then(startupOnce);
             // Hard cap: never let a hung font fetch or a missing 'load' event
             // stall boot past the host's 15 s ready window.
