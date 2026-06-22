@@ -1242,7 +1242,39 @@ public partial class MainWindow : Window
         ReloadProjectList();
         PickerSearch.Text = string.Empty;
         RefreshPickerItems(string.Empty);
-        Dispatcher.InvokeAsync(() => PickerSearch.Focus(), DispatcherPriority.Input);
+
+        // WebView2 keeps the OS keyboard focus until something explicitly
+        // pulls it away — PickerSearch.Focus() alone only moves WPF's logical
+        // focus, so typed characters keep landing in the active Claude tab.
+        // We have to wait for the popup's HWND to exist (Loaded fires on the
+        // popup's Border) before SetFocus can do anything, hence the Loaded
+        // hop instead of a same-tick Dispatcher.InvokeAsync.
+        if (PickerSearch.IsLoaded)
+        {
+            GrabPickerFocus();
+        }
+        else
+        {
+            void OnceLoaded(object s, RoutedEventArgs ev)
+            {
+                PickerSearch.Loaded -= OnceLoaded;
+                GrabPickerFocus();
+            }
+            PickerSearch.Loaded += OnceLoaded;
+        }
+    }
+
+    private void GrabPickerFocus()
+    {
+        // Background priority: by the time this runs the popup HWND is up,
+        // visible, and ready to receive OS focus. Doing it earlier wins the
+        // race against WebView2 only intermittently.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            NativeFocus.MoveOsFocusTo(PickerSearch);
+            PickerSearch.Focus();
+            Keyboard.Focus(PickerSearch);
+        }), DispatcherPriority.Background);
     }
 
     private void OnPickerSearchChanged(object sender, TextChangedEventArgs e)
