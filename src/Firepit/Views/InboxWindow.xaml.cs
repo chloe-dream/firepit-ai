@@ -41,6 +41,20 @@ public partial class InboxWindow : Window
             CaptionRow.Height = new GridLength(capH);
             var chrome = System.Windows.Shell.WindowChrome.GetWindowChrome(this);
             if (chrome is not null) chrome.CaptionHeight = capH;
+
+            // capH is 32 * fontScale (see App.ApplyFontResources). The action
+            // row's buttons grow with BaseFontSize, so at larger font settings
+            // the fixed 560x460 window clips them. Grow the window by the same
+            // scale to keep every button on-screen. Only scale up — at smaller
+            // fonts the default size is already roomy.
+            var scale = capH / 32.0;
+            if (scale > 1.0)
+            {
+                Width     *= scale;
+                Height    *= scale;
+                MinWidth  *= scale;
+                MinHeight *= scale;
+            }
         }
         SourceInitialized += (_, _) => WindowDarkMode.EnableForWindow(this);
 

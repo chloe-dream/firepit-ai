@@ -33,6 +33,13 @@ public partial class MainWindow : Window
     private readonly IReadOnlyDictionary<string, IAgentAdapter> _adapters;
     private readonly ISettingsStore _settingsStore;
     private readonly Dictionary<string, (TabItem TabItem, SessionTab Session)> _openTabs = new(StringComparer.OrdinalIgnoreCase);
+
+    // Projects whose tab was closed after a real session had run. Reopening
+    // such a tab in the same app run should --continue rather than start a
+    // fresh session — otherwise closing-and-reopening a tab silently drops the
+    // user's conversation. Across app restarts, RestoreTabsFromState handles
+    // resume instead; this set only needs to survive within one app run.
+    private readonly HashSet<string> _resumableProjects = new(StringComparer.OrdinalIgnoreCase);
     private readonly ObservableCollection<ProjectPickerItem> _pickerItems = new();
     private List<Project> _allProjects = new();
 
@@ -683,7 +690,10 @@ public partial class MainWindow : Window
             }
             return;
         }
-        AddSessionTab(project, resume, deferred: false);
+        // A tab that was closed after running a session resumes on reopen, so
+        // the user doesn't lose their conversation by closing-and-reopening.
+        var effectiveResume = resume || _resumableProjects.Contains(project.Path);
+        AddSessionTab(project, effectiveResume, deferred: false);
     }
 
     /// <summary>
@@ -1079,6 +1089,13 @@ public partial class MainWindow : Window
             DisposeConfigWatcher(key);
             DisposeInboxWatcher(key);
             DisposeRunsWatcher(key);
+            // If this tab actually ran a session, a Claude conversation exists
+            // on disk for this project. Remember it so a later reopen resumes
+            // with --continue instead of starting fresh and losing context.
+            if (session.IsStarted || session.PendingResume)
+            {
+                _resumableProjects.Add(key);
+            }
         }
 
         var index = Tabs.Items.IndexOf(tabItem);
