@@ -131,7 +131,16 @@ public sealed class ActivityDetector
 
     private SessionState? SetLocked(SessionState next)
     {
-        if (_state == SessionState.Dead && next != SessionState.Dead)
+        // Dead is terminal for PASSIVE transitions — a late NotifyRead from a
+        // torn-down pump, or a Tick — so a dying session can't flicker back to
+        // life on stray events. But NotifyIgniting is the explicit "a NEW agent
+        // process is booting" signal, fired before every (re)spawn. It MUST be
+        // able to revive a Dead detector: the detector lives for the whole tab,
+        // not per-process, so without this escape it stays Dead across every
+        // restart. A stuck-Dead detector then makes each later tab activation
+        // tear down and respawn a perfectly live agent — the "switching to this
+        // tab kills the session and redraws everything" bug.
+        if (_state == SessionState.Dead && next != SessionState.Dead && next != SessionState.Igniting)
         {
             return null;
         }

@@ -110,6 +110,27 @@ public class ActivityDetectorTests
     }
 
     [Fact]
+    public void Reignite_RevivesDeadDetector()
+    {
+        // A restart (Rekindle / --continue) must bring a Dead session back to
+        // life. The detector lives for the whole tab, not per-process, so if
+        // Dead stayed terminal across NotifyIgniting the detector would be
+        // stuck Dead forever — and every later tab activation would tear down
+        // and respawn a perfectly live agent (the "switching to this tab kills
+        // the session and redraws everything" bug).
+        var detector = new ActivityDetector(new FakeClock());
+        detector.NotifyIgniting();
+        detector.NotifyRead();
+        detector.NotifyExited();
+        Assert.Equal(SessionState.Dead, detector.State);
+
+        detector.NotifyIgniting();
+        Assert.Equal(SessionState.Igniting, detector.State);
+        detector.NotifyRead();
+        Assert.Equal(SessionState.Burning, detector.State);
+    }
+
+    [Fact]
     public void StateChanged_DoesNotFireForRedundantTransitions()
     {
         var detector = new ActivityDetector(new FakeClock(), TestSettings);
