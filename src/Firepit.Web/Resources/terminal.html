@@ -226,6 +226,31 @@
                     postToHost({ type: 'progress', state: state });
                     return true;
                 });
+
+                // OSC 52 — clipboard write. TUI apps (Claude Code's "copy to
+                // clipboard", tmux, vim, etc.) put text on the system clipboard
+                // by emitting ESC ] 52 ; c ; <base64> ST. xterm does NOT wire
+                // OSC 52 to a real clipboard by default (it's security-gated),
+                // so without this the agent's on-screen "Copied!" is a lie — the
+                // bytes never leave the terminal. As a transparent host we
+                // forward the decoded text to the host, which owns the Windows
+                // clipboard. xterm hands us "<selection>;<payload>", e.g.
+                // "c;SGVsbG8=" (c=clipboard, p=primary — both map to clipboard).
+                term.parser.registerOscHandler(52, function (data) {
+                    if (typeof data !== 'string') return false;
+                    const sep = data.indexOf(';');
+                    if (sep < 0) return false;
+                    const payload = data.slice(sep + 1);
+                    // "?" is a READ/query request — servicing it would silently
+                    // leak the user's clipboard to the agent, so we decline it
+                    // (and an empty payload clears, which we also skip).
+                    if (payload === '' || payload === '?') return true;
+                    try {
+                        const text = new TextDecoder().decode(fromBase64(payload));
+                        if (text) postToHost({ type: 'copy', text: text });
+                    } catch (e) { /* malformed base64 — ignore */ }
+                    return true;
+                });
             }
 
             // Search overlay wiring. The DOM lives in static markup; we just
