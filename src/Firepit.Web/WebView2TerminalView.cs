@@ -35,6 +35,14 @@ public sealed class WebView2TerminalView : ITerminalView
     private FileDropTarget? _fileDropTarget;
     private readonly List<IntPtr> _dropTargetHwnds = new();
 
+    // Coalescing buffer for PTY output (see WriteAsync). A busy agent streams
+    // many small chunks; batching them into one Background-priority dispatcher
+    // flush keeps a single chatty tab from starving the UI thread shared by
+    // every other tab.
+    private readonly object _writeGate = new();
+    private readonly MemoryStream _pendingWrites = new();
+    private bool _flushScheduled;
+
     public WebView2TerminalView(TerminalThemeSettings? theme = null, int fontSize = 14)
     {
         _theme = (theme ?? TerminalThemeSettings.Defaults).Resolved();
@@ -159,18 +167,62 @@ public sealed class WebView2TerminalView : ITerminalView
             return ValueTask.CompletedTask;
         }
 
-        var b64 = Convert.ToBase64String(data.Span);
-        var payload = $"{{\"type\":\"data\",\"b64\":\"{b64}\"}}";
-        if (_webView.Dispatcher.CheckAccess())
+        // Coalesce: append to a shared buffer and schedule AT MOST ONE flush.
+        // The old path marshalled every PTY chunk individually, and at the
+        // default Normal priority — which in WPF outranks Input and Render. A
+        // busy agent streaming hundreds of small chunks/sec therefore flooded
+        // the UI thread with high-priority work, starving keyboard input,
+        // rendering, and every other tab. Batching collapses a burst into a
+        // single Background-priority post so user interaction always wins, and
+        // xterm decodes one combined write instead of hundreds of tiny ones.
+        bool schedule;
+        lock (_writeGate)
         {
-            _webView.CoreWebView2.PostWebMessageAsString(payload);
+            // Dispose may have flipped _disposed (and is now waiting on this
+            // same lock to dispose the buffer) — bail rather than write into a
+            // stream that's about to go away.
+            if (_disposed)
+            {
+                return ValueTask.CompletedTask;
+            }
+            _pendingWrites.Write(data.Span);
+            schedule = !_flushScheduled;
+            _flushScheduled = true;
         }
-        else
+        if (schedule)
         {
-            _webView.Dispatcher.InvokeAsync(() =>
-                _webView.CoreWebView2.PostWebMessageAsString(payload));
+            _webView.Dispatcher.InvokeAsync(
+                FlushPendingWrites,
+                System.Windows.Threading.DispatcherPriority.Background);
         }
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Drain the coalescing buffer and post it to xterm as one message. Runs on
+    /// the UI thread at Background priority, so a flood of terminal output never
+    /// preempts input or rendering.
+    /// </summary>
+    private void FlushPendingWrites()
+    {
+        byte[] buffer;
+        lock (_writeGate)
+        {
+            _flushScheduled = false;
+            if (_pendingWrites.Length == 0)
+            {
+                return;
+            }
+            buffer = _pendingWrites.ToArray();
+            _pendingWrites.SetLength(0);
+        }
+
+        if (_disposed || _webView.CoreWebView2 is not { } core)
+        {
+            return;
+        }
+        var b64 = Convert.ToBase64String(buffer);
+        core.PostWebMessageAsString($"{{\"type\":\"data\",\"b64\":\"{b64}\"}}");
     }
 
     public void Focus()
@@ -223,6 +275,12 @@ public sealed class WebView2TerminalView : ITerminalView
             }
         }
         catch { /* ignored */ }
+
+        lock (_writeGate)
+        {
+            _pendingWrites.Dispose();
+            _flushScheduled = false;
+        }
 
         _webView.Dispose();
     }
