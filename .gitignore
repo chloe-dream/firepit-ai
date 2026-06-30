@@ -45,9 +45,14 @@ logs/
 .env
 .env.local
 
-# Per-user briefing inbox — ephemeral notes between user and the
-# in-tab Claude, never meant to be checked in (Phase 5 inbox design).
+# Firepit + Claude Code — shared config is versioned, runtime/personal is local.
+# config.json, .claude/mcp.json, settings.json, commands/, agents/ stay tracked
+# (declarative + shareable, no plaintext secrets — only ${cred:...} references).
+# The rest below is ephemeral / per-machine / personal.
 .firepit/inbox/
+.firepit/runs/
+.claude/*.lock
+.claude/agent-memory/
 
 # Test results
 TestResults/

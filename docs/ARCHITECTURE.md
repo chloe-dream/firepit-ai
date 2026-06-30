@@ -431,6 +431,30 @@ Symmetric to §4.4 (agent spawn failure). For each resolved stdio server with a 
 
 HTTP/SSE servers are not pre-flighted (no PATH dependency); their failure surface is left to the agent's own MCP output.
 
+### 9.8 Git hygiene: versioned vs local
+
+A project's Firepit/Claude footprint splits cleanly into two halves, and the
+split is what Firepit's first-scaffold hardening (`ProjectScaffolding`) encodes:
+
+| Versioned (commit it) | Local / ephemeral (ignore it) |
+|---|---|
+| `.firepit/config.json` | `.firepit/inbox/`, `.firepit/runs/` |
+| `.claude/mcp.json`, `.claude/settings.json` | `.claude/settings.local.json` |
+| `.claude/commands/`, `.claude/agents/` | `.claude/*.lock`, `.claude/agent-memory/` |
+
+The versioned half is **declarative and shareable** and — by design — carries
+**no plaintext secrets**: every credential is a `${cred:...}` reference resolved
+through the Windows Credential Manager (§9.4), so the committed files are safe in
+a shared repo. The local half is per-machine or personal (cross-project inbox
+notes, scheduled-run outputs, machine-local overrides, lockfiles, agent memory).
+
+The first time Firepit scaffolds a project's `config.json`, it idempotently
+appends the granular ignore block to the root `.gitignore`, seeds the
+"read `.firepit/inbox/` on session start" convention into `CLAUDE.md`, and — if
+it finds a **blanket** `.firepit/` or `.claude/` ignore (which would swallow the
+shared config) — warns and offers to migrate it to the granular form. The
+hardening fires only on the initial scaffold, so existing repos are untouched.
+
 ---
 
 ## 10. Quick Links

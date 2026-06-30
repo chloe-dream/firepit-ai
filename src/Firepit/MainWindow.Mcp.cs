@@ -297,10 +297,22 @@ public partial class MainWindow : IMcpBackend
                         $"Unknown command type '{spec.Type}'. Expected: shell | claude-prompt | url");
             }
 
-            // Existing config — or scaffold one. EnsureScaffold no-ops if the
-            // file already exists, otherwise drops the commented tour so first-
-            // time use still leaves the project in a hand-editable state.
-            ProjectConfigScaffold.EnsureScaffold(project.Path, project.Name);
+            // Existing config — or scaffold one. EnsureProjectScaffold no-ops
+            // if the file already exists; on first scaffold it also drops the
+            // commented tour AND sets up git hygiene + the inbox convention.
+            var scaffold = ProjectScaffolding.EnsureProjectScaffold(project.Path, project.Name);
+            if (scaffold.ScaffoldCreated)
+            {
+                Log.Information(
+                    "First scaffold for {Project} (via add_command): gitignoreUpdated={Git}, claudeSeeded={Claude}, blanketIgnores=[{Blanket}]",
+                    project.Name, scaffold.GitignoreUpdated, scaffold.ClaudeMdSeeded, string.Join(", ", scaffold.BlanketIgnores));
+                if (scaffold.BlanketIgnores.Count > 0)
+                {
+                    ShowToast(
+                        $"{project.Name}: .gitignore hides shared config ({string.Join(", ", scaffold.BlanketIgnores)}) — open Configure to fix",
+                        isError: true);
+                }
+            }
             var existing = SafeLoadProjectConfig(project.Path)
                            ?? new Firepit.Core.ProjectConfig.ProjectConfig();
 

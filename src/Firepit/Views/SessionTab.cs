@@ -852,11 +852,21 @@ public sealed class SessionTab : IAsyncDisposable
         try
         {
             var projectId = _currentConfig?.Id ?? Context.Name;
-            var path = Firepit.Core.ProjectConfig.ProjectConfigScaffold.EnsureScaffold(Context.Path, projectId);
-            Log.Information("Opening project config for {Project} at {Path}", Context.Name, path);
+            var scaffold = Firepit.Core.ProjectConfig.ProjectScaffolding.EnsureProjectScaffold(Context.Path, projectId);
+            if (scaffold.ScaffoldCreated)
+            {
+                Log.Information(
+                    "First scaffold for {Project}: gitignoreUpdated={Git}, claudeSeeded={Claude}, blanketIgnores=[{Blanket}]",
+                    Context.Name, scaffold.GitignoreUpdated, scaffold.ClaudeMdSeeded, string.Join(", ", scaffold.BlanketIgnores));
+                if (scaffold.BlanketIgnores.Count > 0)
+                {
+                    OfferBlanketIgnoreFix(scaffold.BlanketIgnores);
+                }
+            }
+            Log.Information("Opening project config for {Project} at {Path}", Context.Name, scaffold.ConfigPath);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = path,
+                FileName = scaffold.ConfigPath,
                 UseShellExecute = true,
             });
         }
@@ -864,6 +874,40 @@ public sealed class SessionTab : IAsyncDisposable
         {
             Log.Warning(ex, "Failed to open project config for {Project}", Context.Name);
             ShowFatal($"Cannot open project config: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The project's .gitignore blanket-ignores .firepit/ or .claude/, which
+    /// hides the shared config (config.json, mcp.json, commands, agents) from
+    /// git. Offer to disable the blanket lines and add the granular block.
+    /// </summary>
+    private void OfferBlanketIgnoreFix(IReadOnlyList<string> blanketIgnores)
+    {
+        var owner = Window.GetWindow(_content);
+        var lines = string.Join(", ", blanketIgnores);
+        var fix = MessageDialog.Show(
+            owner,
+            title: "Gitignore hides shared config",
+            message:
+                $"This project's .gitignore blanket-ignores {lines}, which keeps the shareable " +
+                "Firepit/Claude config (config.json, .claude/mcp.json, commands, agents) out of git. " +
+                "Fix it — comment those lines out and add the granular ignore block?",
+            primaryLabel: "Fix .gitignore",
+            secondaryLabel: "Leave it");
+        if (!fix)
+        {
+            return;
+        }
+        try
+        {
+            Firepit.Core.ProjectConfig.ProjectScaffolding.MigrateBlanketIgnores(Context.Path);
+            Log.Information("Migrated blanket gitignore for {Project}: {Lines}", Context.Name, lines);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Gitignore migration failed for {Project}", Context.Name);
+            ShowFatal($"Could not update .gitignore: {ex.Message}");
         }
     }
 
