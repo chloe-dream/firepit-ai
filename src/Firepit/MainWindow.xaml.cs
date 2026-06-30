@@ -422,7 +422,35 @@ public partial class MainWindow : Window
 
     private void ReloadProjectList()
     {
-        var manualEntries = (_settings.Projects ?? [])
+        var rawManual = (_settings.Projects ?? []).ToList();
+
+        // Prune orphaned manual entries — a renamed or deleted project folder
+        // leaves a dead registry block (the folder is gone but its parent still
+        // exists). Entries whose whole drive/parent is missing are treated as
+        // merely offline and kept, so a briefly-unavailable network/cloud mount
+        // doesn't silently lose projects.
+        var classified = rawManual
+            .Select(p => (Entry: p, Status: ProjectRegistryHygiene.Classify(p.Path)))
+            .ToList();
+        var orphans = classified.Where(c => c.Status == ManualEntryStatus.Orphaned).Select(c => c.Entry).ToList();
+        if (orphans.Count > 0)
+        {
+            rawManual = classified.Where(c => c.Status != ManualEntryStatus.Orphaned).Select(c => c.Entry).ToList();
+            _settings = _settings with { Projects = rawManual };
+            var names = string.Join(", ", orphans.Select(o => o.Name));
+            try
+            {
+                _settingsStore.Save(_settings);
+                Log.Information("Pruned {Count} orphaned project registry entr(ies): {Names}", orphans.Count, names);
+                ShowToast($"Removed {orphans.Count} stale project entr{(orphans.Count == 1 ? "y" : "ies")} ({names}) — folder no longer exists");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to persist pruned project registry");
+            }
+        }
+
+        var manualEntries = rawManual
             .Select(MapManualProject)
             .ToArray();
 
