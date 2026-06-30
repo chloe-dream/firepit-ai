@@ -330,7 +330,8 @@ public partial class MainWindow : IMcpBackend
                 Confirm:         spec.Confirm,
                 Window:          spec.Window,
                 LongRunning:     spec.LongRunning,
-                KeepOpenOnError: spec.KeepOpenOnError);
+                KeepOpenOnError: spec.KeepOpenOnError,
+                Group:           spec.Group);
 
             var beforeCount = existing.Commands?.Count ?? 0;
             var merged      = ProjectCommandMutator.Upsert(existing.Commands, newCommand);
@@ -424,6 +425,7 @@ public partial class MainWindow : IMcpBackend
         Window:          c.Window,
         LongRunning:     c.LongRunning,
         KeepOpenOnError: c.KeepOpenOnError,
+        Group:           c.Group,
         Disabled:        c.Disabled);
 
     public Task<InboxWriteResult> SendInboxAsync(string fromProject, string toProject,

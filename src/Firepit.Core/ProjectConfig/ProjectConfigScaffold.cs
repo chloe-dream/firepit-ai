@@ -93,6 +93,9 @@ public static class ProjectConfigScaffold
   //   keepOpenOnError — true: the spawned console closes on success but stays
   //                  open (pauses) on a non-zero exit so you can read the
   //                  error. Replaces blanket "-NoExit". Windowed shell only.
+  //   group        — opt-in: commands sharing a group label collapse into one
+  //                  toolbar dropdown button (e.g. "Run" for Build/Debug/
+  //                  Release). Omit for a standalone button.
   // "commands": [
   //   { "name": "Tests",   "type": "shell",         "command": "pwsh", "args": ["-c", "dotnet test"] },
   //   { "name": "Dev",     "type": "shell",         "command": "npm",  "args": ["run", "dev"],

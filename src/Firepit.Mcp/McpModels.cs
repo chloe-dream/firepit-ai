@@ -59,6 +59,7 @@ public sealed record CommandSummary(
     string? Window,
     bool? LongRunning,
     bool? KeepOpenOnError,
+    string? Group,
     bool? Disabled);
 
 public sealed record CommandListResult(
@@ -84,7 +85,8 @@ public sealed record AddCommandSpec(
     bool? Confirm = null,
     string? Window = null,
     bool? LongRunning = null,
-    bool? KeepOpenOnError = null);
+    bool? KeepOpenOnError = null,
+    string? Group = null);
 
 // Resource definition returned by resources/list. Tool definitions live as
 // internal records next to the catalog (McpToolDefinitionRaw) — they carry

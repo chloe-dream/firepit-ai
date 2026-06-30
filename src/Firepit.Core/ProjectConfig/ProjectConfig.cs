@@ -71,7 +71,14 @@ public sealed record ProjectCommand(
     // on a non-zero exit so the user can read the error — instead of every
     // config file hand-rolling blanket "-NoExit" / "; pause" boilerplate.
     // Windowed shell only; ignored for window:"inline" (the PTY owns that).
-    bool? KeepOpenOnError = null);
+    bool? KeepOpenOnError = null,
+    // Opt-in toolbar grouping. Commands that share a Group label collapse into
+    // a single dropdown button (label = the group) instead of N buttons — for
+    // multi-target projects (Build & Run / Debug / Release). Purely opt-in: a
+    // command with no Group renders as its own button exactly as before, so
+    // genuine multi-command projects are never auto-collapsed. A group with a
+    // single member also renders as a plain button (a dropdown of one is noise).
+    string? Group = null);
 
 public enum ProjectCommandType
 {

@@ -148,7 +148,8 @@ internal static class McpToolDefinitions
                 "confirm":     { "type": "boolean", "description": "shell: modal 'Run?' before spawning." },
                 "window":      { "type": "string", "description": "'new' (default) | 'reuse:<id>' (2nd click focuses existing window) | 'inline' (write into this tab's PTY)." },
                 "longRunning": { "type": "boolean", "description": "shell: live running-indicator + right-click Stop kills the tree. Pair with reuse:<id> for watchers (npm run dev)." },
-                "keepOpenOnError": { "type": "boolean", "description": "shell (windowed): close the console on success, keep it open on a non-zero exit so the error is readable. Replaces blanket -NoExit / '; pause'. Ignored for window:'inline'." }
+                "keepOpenOnError": { "type": "boolean", "description": "shell (windowed): close the console on success, keep it open on a non-zero exit so the error is readable. Replaces blanket -NoExit / '; pause'. Ignored for window:'inline'." },
+                "group":       { "type": "string", "description": "Opt-in toolbar grouping. Commands sharing a group label collapse into one dropdown button (e.g. 'Run' for Build & Run / Debug / Release). Omit to render as a standalone button." }
               },
               "required": ["name", "type"],
               "additionalProperties": false

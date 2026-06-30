@@ -85,42 +85,120 @@ public partial class TabToolbar : UserControl
     public void SetCommands(IReadOnlyList<ProjectCommand> commands, Func<ProjectCommand, bool>? isRunning = null)
     {
         var query = isRunning ?? (_ => false);
-        var buttons = new List<Button>(commands.Count);
         var style = (Style)FindResource("ToolbarIconButton");
-        foreach (var cmd in commands)
+        var buttons = new List<Button>();
+        // CommandGrouping decides what collapses (opt-in groups of 2+) vs. what
+        // stays a standalone button — so a project that doesn't use groups (or a
+        // genuine multi-command project) renders exactly as it did before.
+        foreach (var unit in CommandGrouping.Plan(commands))
         {
-            if (cmd.Disabled == true) continue;
-            var running = query(cmd);
-            var button = new Button
-            {
-                Content = BuildCommandContent(cmd, running),
-                Style = style,
-                Tag = cmd,
-                ToolTip = BuildCommandTooltip(cmd, running),
-            };
-            button.Click += OnCommandClick;
-
-            // Stop only makes sense once tracked-alive. Shows a single-item
-            // context menu so the right-click affordance is discoverable even
-            // for non-running commands (they get a disabled "Not running"
-            // entry — keeps menu positioning consistent). Elevated children
-            // can't be killed from the non-elevated parent — the menu surfaces
-            // that explicitly instead of silently failing.
-            var menu = new ContextMenu();
-            var elevatedAndRunning = running && cmd.Elevated == true;
-            var stopItem = new MenuItem
-            {
-                Header = elevatedAndRunning ? "Stop (elevated — close its window manually)" : "Stop",
-                IsEnabled = running && !elevatedAndRunning,
-                Tag = cmd,
-            };
-            stopItem.Click += OnStopMenuClick;
-            menu.Items.Add(stopItem);
-            button.ContextMenu = menu;
-
-            buttons.Add(button);
+            buttons.Add(unit.IsGroup
+                ? BuildGroupButton(unit.GroupLabel!, unit.GroupMembers!, query, style)
+                : BuildSingleCommandButton(unit.Single!, query(unit.Single!), style));
         }
         Commands.ItemsSource = buttons;
+    }
+
+    private Button BuildSingleCommandButton(ProjectCommand cmd, bool running, Style style)
+    {
+        var button = new Button
+        {
+            Content = BuildCommandContent(cmd, running),
+            Style = style,
+            Tag = cmd,
+            ToolTip = BuildCommandTooltip(cmd, running),
+        };
+        button.Click += OnCommandClick;
+
+        // Stop only makes sense once tracked-alive. Shows a single-item context
+        // menu so the right-click affordance is discoverable even for
+        // non-running commands (they get a disabled "Not running" entry — keeps
+        // menu positioning consistent). Elevated children can't be killed from
+        // the non-elevated parent — the menu surfaces that explicitly instead
+        // of silently failing.
+        var menu = new ContextMenu();
+        var elevatedAndRunning = running && cmd.Elevated == true;
+        var stopItem = new MenuItem
+        {
+            Header = elevatedAndRunning ? "Stop (elevated — close its window manually)" : "Stop",
+            IsEnabled = running && !elevatedAndRunning,
+            Tag = cmd,
+        };
+        stopItem.Click += OnStopMenuClick;
+        menu.Items.Add(stopItem);
+        button.ContextMenu = menu;
+        return button;
+    }
+
+    /// <summary>
+    /// A collapsed multi-target group: one toolbar button labelled with the
+    /// group name that drops down its member commands. Left-click opens the
+    /// dropdown (it's a menu, not a split button). A running member shows a dot
+    /// on both the button and its menu entry, plus a Stop entry.
+    /// </summary>
+    private Button BuildGroupButton(
+        string group, IReadOnlyList<ProjectCommand> members, Func<ProjectCommand, bool> query, Style style)
+    {
+        var anyRunning = members.Any(query);
+        var button = new Button
+        {
+            Content = BuildGroupContent(group, members, anyRunning),
+            Style = style,
+            ToolTip = "Run: " + string.Join(", ", members.Select(m => m.Name)),
+        };
+
+        var menu = new ContextMenu();
+        foreach (var m in members)
+        {
+            var running = query(m);
+            var item = new MenuItem
+            {
+                Header = running ? "● " + m.Name : m.Name,
+                Tag = m,
+            };
+            item.Click += OnGroupMemberClick;
+            menu.Items.Add(item);
+
+            if (running)
+            {
+                var stop = new MenuItem
+                {
+                    Header = m.Elevated == true
+                        ? $"Stop {m.Name} (elevated — close its window manually)"
+                        : $"Stop {m.Name}",
+                    IsEnabled = m.Elevated != true,
+                    Tag = m,
+                };
+                stop.Click += OnStopMenuClick;
+                menu.Items.Add(stop);
+            }
+        }
+        button.ContextMenu = menu;
+        button.Click += OnGroupButtonClick;
+        return button;
+    }
+
+    private void OnGroupButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { ContextMenu: { } menu } b)
+        {
+            menu.PlacementTarget = b;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+        // Don't let this bubble to the toolbar's global focus-return handler —
+        // handing focus to the terminal hwnd while the dropdown is opening would
+        // dismiss the popup. A picked member re-raises the focus return itself.
+        e.Handled = true;
+    }
+
+    private void OnGroupMemberClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: ProjectCommand cmd })
+        {
+            CommandClicked?.Invoke(this, cmd);
+        }
+        RequestFocusReturn();
     }
 
     private void OnCommandClick(object sender, RoutedEventArgs e)
@@ -213,6 +291,60 @@ public partial class TabToolbar : UserControl
             panel.Children.Add(dot);
         }
 
+        panel.Children.Add(path);
+        panel.Children.Add(text);
+        return panel;
+    }
+
+    private static StackPanel BuildGroupContent(string group, IReadOnlyList<ProjectCommand> members, bool running)
+    {
+        // Borrow the first member's icon as the group glyph; fall back to a
+        // name-derived icon. A trailing caret marks it as a dropdown.
+        var iconHint = members.Select(m => m.Icon).FirstOrDefault(i => !string.IsNullOrEmpty(i));
+        var (geometry, mode) = IconResolver.Resolve(iconHint, fallbackName: group);
+
+        var path = new Path
+        {
+            Data = geometry,
+            Width = 14,
+            Height = 14,
+            Margin = new Thickness(0, 0, 7, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Stretch = Stretch.Uniform,
+        };
+        var foregroundBinding = new Binding(nameof(Control.Foreground))
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor) { AncestorType = typeof(Button) },
+        };
+        if (mode == Firepit.Resources.IconMode.Fill)
+        {
+            path.SetBinding(Shape.FillProperty, foregroundBinding);
+        }
+        else
+        {
+            path.SetBinding(Shape.StrokeProperty, foregroundBinding);
+            path.StrokeThickness = 1.2;
+            path.StrokeLineJoin = PenLineJoin.Round;
+            path.Stretch = Stretch.None;
+        }
+
+        var text = new TextBlock
+        {
+            Text = group + "  ▾", // group name + ▾
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        if (running)
+        {
+            panel.Children.Add(new System.Windows.Shapes.Ellipse
+            {
+                Width = 7,
+                Height = 7,
+                Margin = new Thickness(0, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Fill = new SolidColorBrush(Color.FromRgb(0xF5, 0xC9, 0x7B)), // burning warm
+            });
+        }
         panel.Children.Add(path);
         panel.Children.Add(text);
         return panel;
