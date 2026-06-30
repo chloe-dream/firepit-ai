@@ -1152,23 +1152,29 @@ public sealed class SessionTab : IAsyncDisposable
             if (!ok) return;
         }
 
-        // keepOpenOnError wraps the launch in cmd.exe so the window closes on
-        // success but pauses on a non-zero exit. Only reachable here (inline
-        // returned early above), so it's inherently windowed-shell-only.
+        // Wrap the launch in cmd.exe when we need a conditional pause
+        // (keepOpenOnError) OR when it's elevated: Windows' ShellExecute ignores
+        // WorkingDirectory for a runas spawn and drops the child in system32, so
+        // the wrapper's `cd /d` shim restores the project root (relative paths
+        // in elevated commands were otherwise unresolvable). Only reachable here
+        // (inline returned early above), so it's inherently windowed-shell-only.
         var keepOpen = cmd.KeepOpenOnError == true;
+        var elevated = cmd.Elevated == true;
+        var cwd = ResolveCwd(cmd);
+        var wrap = keepOpen || elevated;
         var psi = new System.Diagnostics.ProcessStartInfo
         {
-            FileName = keepOpen
+            FileName = wrap
                 ? Firepit.Core.ProjectConfig.ShellCommandLauncher.ShellExecutable
                 : cmd.Command,
-            Arguments = keepOpen
-                ? Firepit.Core.ProjectConfig.ShellCommandLauncher.BuildKeepOpenOnErrorArguments(cmd.Command!, cmd.Args)
+            Arguments = wrap
+                ? Firepit.Core.ProjectConfig.ShellCommandLauncher.BuildWrappedArguments(cmd.Command!, cmd.Args, cwd, keepOpen)
                 : (cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty),
-            WorkingDirectory = ResolveCwd(cmd),
+            WorkingDirectory = cwd,
             UseShellExecute = true,
             WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
         };
-        if (cmd.Elevated == true)
+        if (elevated)
         {
             // Windows: triggers UAC; ERROR_CANCELLED if user declines.
             psi.Verb = "runas";
