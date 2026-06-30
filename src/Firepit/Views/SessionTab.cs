@@ -1152,10 +1152,18 @@ public sealed class SessionTab : IAsyncDisposable
             if (!ok) return;
         }
 
+        // keepOpenOnError wraps the launch in cmd.exe so the window closes on
+        // success but pauses on a non-zero exit. Only reachable here (inline
+        // returned early above), so it's inherently windowed-shell-only.
+        var keepOpen = cmd.KeepOpenOnError == true;
         var psi = new System.Diagnostics.ProcessStartInfo
         {
-            FileName = cmd.Command,
-            Arguments = cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty,
+            FileName = keepOpen
+                ? Firepit.Core.ProjectConfig.ShellCommandLauncher.ShellExecutable
+                : cmd.Command,
+            Arguments = keepOpen
+                ? Firepit.Core.ProjectConfig.ShellCommandLauncher.BuildKeepOpenOnErrorArguments(cmd.Command!, cmd.Args)
+                : (cmd.Args is { Count: > 0 } a ? string.Join(' ', a) : string.Empty),
             WorkingDirectory = ResolveCwd(cmd),
             UseShellExecute = true,
             WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,

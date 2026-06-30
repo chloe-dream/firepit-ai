@@ -147,7 +147,8 @@ internal static class McpToolDefinitions
                 "elevated":    { "type": "boolean", "description": "shell: Windows UAC (run as admin)." },
                 "confirm":     { "type": "boolean", "description": "shell: modal 'Run?' before spawning." },
                 "window":      { "type": "string", "description": "'new' (default) | 'reuse:<id>' (2nd click focuses existing window) | 'inline' (write into this tab's PTY)." },
-                "longRunning": { "type": "boolean", "description": "shell: live running-indicator + right-click Stop kills the tree. Pair with reuse:<id> for watchers (npm run dev)." }
+                "longRunning": { "type": "boolean", "description": "shell: live running-indicator + right-click Stop kills the tree. Pair with reuse:<id> for watchers (npm run dev)." },
+                "keepOpenOnError": { "type": "boolean", "description": "shell (windowed): close the console on success, keep it open on a non-zero exit so the error is readable. Replaces blanket -NoExit / '; pause'. Ignored for window:'inline'." }
               },
               "required": ["name", "type"],
               "additionalProperties": false

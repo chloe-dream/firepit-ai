@@ -66,7 +66,12 @@ public sealed record ProjectCommand(
     // with "reuse:<id>" for long-running watchers (npm run dev, relay proxy)
     // so a second click focuses the existing window instead of spawning a
     // duplicate.
-    bool? LongRunning = null);
+    bool? LongRunning = null,
+    // When true, the spawned console closes on success but stays open (pauses)
+    // on a non-zero exit so the user can read the error — instead of every
+    // config file hand-rolling blanket "-NoExit" / "; pause" boilerplate.
+    // Windowed shell only; ignored for window:"inline" (the PTY owns that).
+    bool? KeepOpenOnError = null);
 
 public enum ProjectCommandType
 {

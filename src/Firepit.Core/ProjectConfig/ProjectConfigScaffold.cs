@@ -90,6 +90,9 @@ public static class ProjectConfigScaffold
   //                  inline      → write the command into THIS tab's PTY
   //   longRunning  — true keeps a live indicator on the button + right-click
   //                  "Stop" kills the process tree
+  //   keepOpenOnError — true: the spawned console closes on success but stays
+  //                  open (pauses) on a non-zero exit so you can read the
+  //                  error. Replaces blanket "-NoExit". Windowed shell only.
   // "commands": [
   //   { "name": "Tests",   "type": "shell",         "command": "pwsh", "args": ["-c", "dotnet test"] },
   //   { "name": "Dev",     "type": "shell",         "command": "npm",  "args": ["run", "dev"],

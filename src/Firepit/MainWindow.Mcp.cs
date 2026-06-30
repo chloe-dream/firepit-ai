@@ -326,10 +326,11 @@ public partial class MainWindow : IMcpBackend
                 Url:         spec.Url,
                 Cwd:         spec.Cwd,
                 Env:         spec.Env,
-                Elevated:    spec.Elevated,
-                Confirm:     spec.Confirm,
-                Window:      spec.Window,
-                LongRunning: spec.LongRunning);
+                Elevated:        spec.Elevated,
+                Confirm:         spec.Confirm,
+                Window:          spec.Window,
+                LongRunning:     spec.LongRunning,
+                KeepOpenOnError: spec.KeepOpenOnError);
 
             var beforeCount = existing.Commands?.Count ?? 0;
             var merged      = ProjectCommandMutator.Upsert(existing.Commands, newCommand);
@@ -418,11 +419,12 @@ public partial class MainWindow : IMcpBackend
         Url:         c.Url,
         Cwd:         c.Cwd,
         Env:         c.Env,
-        Elevated:    c.Elevated,
-        Confirm:     c.Confirm,
-        Window:      c.Window,
-        LongRunning: c.LongRunning,
-        Disabled:    c.Disabled);
+        Elevated:        c.Elevated,
+        Confirm:         c.Confirm,
+        Window:          c.Window,
+        LongRunning:     c.LongRunning,
+        KeepOpenOnError: c.KeepOpenOnError,
+        Disabled:        c.Disabled);
 
     public Task<InboxWriteResult> SendInboxAsync(string fromProject, string toProject,
                                                  string subject, string body, string priority) =>
