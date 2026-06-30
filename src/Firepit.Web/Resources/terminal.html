@@ -371,11 +371,22 @@
             document.addEventListener('contextmenu', function (e) {
                 e.preventDefault();
                 if (term.hasSelection()) {
+                    // An explicit selection (incl. Shift+drag in mouse mode) is
+                    // a clear copy intent — always copy it.
                     postToHost({ type: 'copy', text: term.getSelection() });
                     term.clearSelection();
-                } else {
-                    postToHost({ type: 'paste-request' });
+                    return;
                 }
+                // No selection → paste. But when the app has mouse reporting on
+                // (Claude Code does), xterm already forwarded this right-click to
+                // it as a mouse event, so the app pastes on its own — doing it
+                // here too inserts the clipboard TWICE. Defer to the app unless
+                // Shift forces local terminal handling.
+                var mouseMode = term.modes && term.modes.mouseTrackingMode;
+                if (mouseMode && mouseMode !== 'none' && !e.shiftKey) {
+                    return;
+                }
+                postToHost({ type: 'paste-request' });
             });
 
             window.chrome.webview.addEventListener('message', function (event) {
