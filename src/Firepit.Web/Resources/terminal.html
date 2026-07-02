@@ -368,26 +368,21 @@
             // Right-click is smart copy/paste (Win Terminal default):
             //   selection present → copy it & clear, no menu, no toast
             //   no selection      → paste from host clipboard
+            // Registered in the CAPTURE phase with stopImmediatePropagation so
+            // xterm's OWN built-in contextmenu handler (which moves + focuses the
+            // hidden textarea and primes it for a native menu copy/paste) never
+            // runs. Firepit's postToHost path is then the single authority for
+            // right-click clipboard, ruling out any xterm-side second paste.
             document.addEventListener('contextmenu', function (e) {
                 e.preventDefault();
+                e.stopImmediatePropagation();
                 if (term.hasSelection()) {
-                    // An explicit selection (incl. Shift+drag in mouse mode) is
-                    // a clear copy intent — always copy it.
                     postToHost({ type: 'copy', text: term.getSelection() });
                     term.clearSelection();
-                    return;
+                } else {
+                    postToHost({ type: 'paste-request' });
                 }
-                // No selection → paste. But when the app has mouse reporting on
-                // (Claude Code does), xterm already forwarded this right-click to
-                // it as a mouse event, so the app pastes on its own — doing it
-                // here too inserts the clipboard TWICE. Defer to the app unless
-                // Shift forces local terminal handling.
-                var mouseMode = term.modes && term.modes.mouseTrackingMode;
-                if (mouseMode && mouseMode !== 'none' && !e.shiftKey) {
-                    return;
-                }
-                postToHost({ type: 'paste-request' });
-            });
+            }, true);
 
             window.chrome.webview.addEventListener('message', function (event) {
                 let message;
