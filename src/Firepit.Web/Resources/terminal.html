@@ -384,6 +384,23 @@
                 }
             }, true);
 
+            // The RIGHT mouse button belongs to Firepit (copy/paste), never the
+            // app. In mouse-reporting mode xterm forwards a right-click to the
+            // app (Claude Code) as a mouse event, and the app then pastes on its
+            // own — an INTERMITTENT second paste on top of our contextmenu paste
+            // (which is why the double came and went). Swallow the right button
+            // in the capture phase, before xterm's bubble-phase mouse handler
+            // reports it to the PTY; the contextmenu handler above does the
+            // actual copy/paste.
+            function swallowRightButton(e) {
+                if (e.button === 2) {
+                    e.stopImmediatePropagation();
+                }
+            }
+            document.addEventListener('mousedown', swallowRightButton, true);
+            document.addEventListener('mouseup', swallowRightButton, true);
+            document.addEventListener('auxclick', swallowRightButton, true);
+
             window.chrome.webview.addEventListener('message', function (event) {
                 let message;
                 try { message = JSON.parse(event.data); } catch (e) { return; }

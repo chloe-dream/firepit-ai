@@ -302,6 +302,11 @@ public sealed class WebView2TerminalView : ITerminalView
             Log.Debug(ex, "WV2 paste-request: clipboard read failed");
             return;
         }
+        // DIAGNOSTIC: one right-click must produce exactly ONE paste-request.
+        // If a repro still shows a double paste, this line reveals whether
+        // Firepit fired the paste twice (two log entries) or the app doubled it
+        // (a single entry — clipboard delivered once by us).
+        Log.Information("WV2 paste-request: delivering {Chars} chars to terminal", text.Length);
         PasteText(text);
     }
 
