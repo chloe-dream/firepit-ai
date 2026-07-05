@@ -1309,17 +1309,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private void GrabPickerFocus()
+    private void GrabPickerFocus(int attempt = 0)
     {
-        // Background priority: by the time this runs the popup HWND is up,
-        // visible, and ready to receive OS focus. Doing it earlier wins the
-        // race against WebView2 only intermittently.
+        // Pulling OS keyboard focus out of the WebView2 sibling HWND races two
+        // things: the popup's own HWND coming up (MoveOsFocusTo no-ops until it
+        // exists — its own doc says "re-try on a later tick") and WebView2
+        // occasionally grabbing focus back. A single shot won only
+        // intermittently — and since the v0.5.46 output coalescing, the
+        // terminal's Background-priority flushes compete with it too. So: post
+        // at Input priority (above those flushes, below Render) AND retry across
+        // a few ticks until the search box actually holds keyboard focus.
+        // Bounded so a genuinely-unfocusable popup never spins.
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            NativeFocus.MoveOsFocusTo(PickerSearch);
+            if (!ProjectPicker.IsOpen)
+            {
+                return;
+            }
+            var osMoved = NativeFocus.MoveOsFocusTo(PickerSearch);
             PickerSearch.Focus();
             Keyboard.Focus(PickerSearch);
-        }), DispatcherPriority.Background);
+
+            if ((!osMoved || !PickerSearch.IsKeyboardFocused) && attempt < 8)
+            {
+                GrabPickerFocus(attempt + 1);
+            }
+        }), DispatcherPriority.Input);
     }
 
     private void OnPickerSearchChanged(object sender, TextChangedEventArgs e)
