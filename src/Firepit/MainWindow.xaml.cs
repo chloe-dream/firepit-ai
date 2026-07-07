@@ -1456,7 +1456,10 @@ public partial class MainWindow : Window
     /// </summary>
     private void OpenManualProject(string folder)
     {
-        var name = System.IO.Path.GetFileName(folder.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
+        // Robust last-segment derivation — Path.GetFileName is empty for a UNC
+        // share root (\\nas\music) or drive root, which left network projects
+        // with a blank tab.
+        var name = ProjectNaming.DeriveName(folder);
 
         var existing = (_settings.Projects ?? []).ToList();
         if (!existing.Any(p => string.Equals(p.Path, folder, StringComparison.OrdinalIgnoreCase)))
