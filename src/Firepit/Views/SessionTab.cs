@@ -526,10 +526,15 @@ public sealed class SessionTab : IAsyncDisposable
     {
         _initialized = true;
 
+        // Hoisted out of the try so the catch filter below can still tell a
+        // torn-down-mid-boot abort from a genuine start failure — TeardownSession
+        // nulls the _cts field, but this local stays valid.
+        var cts = new CancellationTokenSource();
+        _cts = cts;
+
         try
         {
-            _cts = new CancellationTokenSource();
-            var ct = _cts.Token;
+            var ct = cts.Token;
 
             _detector.NotifyIgniting();
             _tickTimer.Start();
@@ -606,6 +611,19 @@ public sealed class SessionTab : IAsyncDisposable
             // true and state isn't Dead/Cold), and clicking the tab again
             // does nothing. NotifyExited transitions to Dead so a retry
             // through RestartIfPending or Rekindle can take.
+            _initialized = false;
+            _detector.NotifyExited();
+        }
+        catch (Exception ex) when (cts.IsCancellationRequested || _disposed)
+        {
+            // A restart / teardown that lands while WebView2 is still creating
+            // its controller ABORTS that call. WebView2 surfaces the abort as a
+            // COMException whose message reads "Class not registered" — but the
+            // HR is 0x80004004 (E_ABORT), not REGDB_E_CLASSNOTREG (0x80040154).
+            // We used to splash it across the tab as a red fatal even though the
+            // retry that immediately follows succeeds. It's a cancellation.
+            Log.Information("Session start aborted mid-init for {Project}: {Message}",
+                Context.Name, ex.Message);
             _initialized = false;
             _detector.NotifyExited();
         }
