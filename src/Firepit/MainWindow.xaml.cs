@@ -436,17 +436,50 @@ public partial class MainWindow : Window
         if (orphans.Count > 0)
         {
             rawManual = classified.Where(c => c.Status != ManualEntryStatus.Orphaned).Select(c => c.Entry).ToList();
+        }
+
+        // Heal entries persisted with a blank name. A UNC share root (\\nas\music)
+        // used to derive an empty name, and that blank was written to
+        // settings.json — so the nameless tab came back on every restart even
+        // after the derivation itself was fixed. Also guards ToDictionary(p =>
+        // p.Name) in the tab-restore path, which would throw on two blank names.
+        var healed = new List<string>();
+        for (var i = 0; i < rawManual.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(rawManual[i].Name))
+            {
+                continue;
+            }
+            var derived = ProjectNaming.DeriveName(rawManual[i].Path);
+            if (string.IsNullOrWhiteSpace(derived))
+            {
+                continue;
+            }
+            rawManual[i] = rawManual[i] with { Name = derived };
+            healed.Add(derived);
+        }
+
+        if (orphans.Count > 0 || healed.Count > 0)
+        {
             _settings = _settings with { Projects = rawManual };
-            var names = string.Join(", ", orphans.Select(o => o.Name));
             try
             {
                 _settingsStore.Save(_settings);
-                Log.Information("Pruned {Count} orphaned project registry entr(ies): {Names}", orphans.Count, names);
-                ShowToast($"Removed {orphans.Count} stale project entr{(orphans.Count == 1 ? "y" : "ies")} ({names}) — folder no longer exists");
+                if (orphans.Count > 0)
+                {
+                    var names = string.Join(", ", orphans.Select(o => o.Name));
+                    Log.Information("Pruned {Count} orphaned project registry entr(ies): {Names}", orphans.Count, names);
+                    ShowToast($"Removed {orphans.Count} stale project entr{(orphans.Count == 1 ? "y" : "ies")} ({names}) — folder no longer exists");
+                }
+                if (healed.Count > 0)
+                {
+                    Log.Information("Derived a name for {Count} unnamed project registry entr(ies): {Names}",
+                        healed.Count, string.Join(", ", healed));
+                }
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to persist pruned project registry");
+                Log.Warning(ex, "Failed to persist project registry repairs");
             }
         }
 
@@ -542,7 +575,9 @@ public partial class MainWindow : Window
     }
 
     private Project MapManualProject(ProjectSettings source) => new(
-        Name: source.Name,
+        // Belt-and-braces: even if the settings.json repair didn't stick, never
+        // surface a nameless tab — derive from the path instead.
+        Name: string.IsNullOrWhiteSpace(source.Name) ? ProjectNaming.DeriveName(source.Path) : source.Name,
         Path: source.Path,
         AdapterId: ClaudeCodeAdapter.AdapterId,
         AgentCommandOverride: source.AgentCommand,
