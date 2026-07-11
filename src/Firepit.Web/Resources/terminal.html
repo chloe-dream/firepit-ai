@@ -463,6 +463,12 @@
                 } else {
                     postToHost({ type: 'paste-request' });
                 }
+                // We swallowed the right-button mousedown (see swallowRightButton
+                // below), so xterm never got to focus its hidden textarea the way
+                // a normal click does. Without this the paste lands but keystrokes
+                // afterwards go nowhere — the user types into the void. Re-focus
+                // in the synchronous gesture so the caret is live immediately.
+                try { term.focus(); } catch (err) { /* ignore */ }
             }, true);
 
             // The RIGHT mouse button belongs to Firepit (copy/paste), never the
@@ -529,6 +535,10 @@
                     case 'paste': {
                         if (typeof message.text === 'string') {
                             term.paste(message.text);
+                            // The paste reply arrives async, after the right-click
+                            // gesture that swallowed focus. Re-assert focus so the
+                            // user can keep typing without clicking back in.
+                            try { term.focus(); } catch (e) { /* ignore */ }
                         }
                         break;
                     }
