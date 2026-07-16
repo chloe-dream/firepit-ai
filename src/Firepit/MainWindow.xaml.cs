@@ -322,6 +322,10 @@ public partial class MainWindow : Window
         MaybePromptForMetaProject();
         StartJobScheduler();
 
+        // Knowledge indexing + search (ROADMAP M9). After ReloadProjectList so
+        // the first scope sync sees the full project list.
+        InitializeKnowledgeService();
+
         // Start the MCP host now that this MainWindow (the IMcpBackend) exists.
         // App.OnStartup can't do this — StartupUri-based window construction
         // hadn't happened yet at that point in v0.5.13–v0.5.15, which is why
@@ -496,6 +500,8 @@ public partial class MainWindow : Window
         {
             ShowToast($"Projects root not found: {_settings.ProjectsRoot}", isError: true);
         }
+
+        SyncKnowledgeScopes();
     }
 
     private void RestoreTabsFromState()
@@ -1690,6 +1696,8 @@ public partial class MainWindow : Window
             try { await _jobScheduler.DisposeAsync(); } catch { /* ignored */ }
             _jobScheduler = null;
         }
+
+        DisposeKnowledgeService();
     }
 
     public void ShowToast(string message, bool isError = false)

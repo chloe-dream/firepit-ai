@@ -6,11 +6,15 @@
     <ProjectReference Include="..\Firepit.Web\Firepit.Web.csproj" />
     <ProjectReference Include="..\Firepit.Adapters\Firepit.Adapters.csproj" />
     <ProjectReference Include="..\Firepit.Mcp\Firepit.Mcp.csproj" />
+    <ProjectReference Include="..\Firepit.Knowledge\Firepit.Knowledge.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Serilog" Version="4.2.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <!-- Serilog→Microsoft.Extensions.Logging bridge so Firepit.Knowledge
+         (which logs against ILogger) lands in the same rolling file. -->
+    <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -407,7 +407,10 @@ local agent — end-to-end working without any cloud network call.
 
 ---
 
-## M9 — Project Knowledge & Blueprints (Deferred, Design Locked 2026-07-16)
+## M9 — Project Knowledge & Blueprints (Design Locked 2026-07-16)
+
+> **Status:** the knowledge half (engine port, `Firepit.Knowledge`, indexing,
+> MCP tools) shipped 2026-07-16. Blueprints are still open.
 
 Give every Firepit project a searchable, git-versioned knowledge base
 (research notes, background docs, decisions) plus a general knowledge
@@ -424,7 +427,11 @@ regenerable at any time).**
 | Scope | Knowledge (MD, committed, English) | Index (gitignored) |
 |---|---|---|
 | Project | `{repo}/.firepit/knowledge/*.md` | `{repo}/.firepit/knowledge.db` |
-| Global | `{projectsRoot}/.firepit/knowledge/*.md` | same folder, gitignored |
+| Global | `{metaProject}/.firepit/knowledge/*.md` | same folder, gitignored |
+
+(`{metaProject}` = `{projectsRoot}/.firepit`, the existing meta project. The
+convention is uniform — the global scope is literally the meta project's own
+project knowledge; only the scope *name* ("global") is special-cased.)
 
 The global scope is simply the `.firepit` root helper project's own
 project knowledge — no special case in code. That project is mirrored

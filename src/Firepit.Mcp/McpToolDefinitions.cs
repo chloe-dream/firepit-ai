@@ -185,6 +185,61 @@ internal static class McpToolDefinitions
               "additionalProperties": false
             }
             """),
+
+        new("firepit_knowledge_search",
+            "Hybrid (semantic + full-text) search over the knowledge bases — the committed " +
+            "markdown files under <project>/.firepit/knowledge/. Scope 'project' searches the " +
+            "calling project, 'global' the shared knowledge base (the .firepit meta project), " +
+            "'both' (default) merges the two. Each hit carries its scope name and relative path; " +
+            "pass those to firepit_knowledge_get for the full document. Prefer this over grepping " +
+            "markdown files: it also matches paraphrases, not just exact keywords.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "query":       { "type": "string", "description": "Natural-language question or keywords." },
+                "scope":       { "type": "string", "enum": ["project", "global", "both"], "default": "both" },
+                "projectName": { "type": "string", "description": "Project whose knowledge to search; omit for the caller's own project." },
+                "limit":       { "type": "integer", "description": "Max documents returned.", "default": 8 }
+              },
+              "required": ["query"],
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_knowledge_get",
+            "Read one knowledge document in full. 'scope' is the scope name as returned by " +
+            "firepit_knowledge_search hits ('global' or a project name; omit for the caller's " +
+            "own project), 'path' the hit's relative path.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "scope": { "type": "string", "description": "Scope name from a search hit; omit for the caller's own project." },
+                "path":  { "type": "string", "description": "Document path relative to the scope's knowledge folder, e.g. 'conpty-resize-quirks.md'." }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_knowledge_add",
+            "Save a new knowledge document as markdown under <scope>/.firepit/knowledge/ and index " +
+            "it immediately. Write knowledge in English (indexing convention). Use 'global' for " +
+            "cross-project knowledge (C# patterns, tooling lore); omit scope for the caller's own " +
+            "project. The file is plain markdown in the repo — commit it like any other file.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "title":   { "type": "string", "description": "Document title; becomes the H1 and the slugged file name." },
+                "content": { "type": "string", "description": "Markdown body (English). A leading '# ' heading is kept as-is." },
+                "scope":   { "type": "string", "description": "'global' or a project name; omit for the caller's own project." }
+              },
+              "required": ["title", "content"],
+              "additionalProperties": false
+            }
+            """),
     ];
 }
 

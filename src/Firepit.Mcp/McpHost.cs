@@ -369,6 +369,46 @@ public sealed class McpHost : IDisposable
                 var result = await _backend.RemoveProjectCommandAsync(projectName, cmdName);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
             }
+            case "firepit_knowledge_search":
+            {
+                var query = args["query"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(query))
+                    return BuildErrorResponse(id, -32602, "missing 'query'");
+                var scope = args["scope"]?.GetValue<string?>() ?? "both";
+                var limit = args["limit"]?.GetValue<int?>() ?? 8;
+                var projectName = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(projectName)) projectName = ctx.ProjectName;
+                var result = await _backend.SearchKnowledgeAsync(
+                    string.IsNullOrEmpty(projectName) ? null : projectName, scope, query, limit);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.KnowledgeSearchResult)));
+            }
+            case "firepit_knowledge_get":
+            {
+                var path = args["path"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(path))
+                    return BuildErrorResponse(id, -32602, "missing 'path'");
+                var scope = args["scope"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(scope)) scope = ctx.ProjectName;
+                if (string.IsNullOrEmpty(scope))
+                    return BuildErrorResponse(id, -32602, "missing 'scope' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var result = await _backend.GetKnowledgeDocumentAsync(scope, path);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.KnowledgeDocumentResult)));
+            }
+            case "firepit_knowledge_add":
+            {
+                var title   = args["title"]?.GetValue<string>();
+                var content = args["content"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(title))
+                    return BuildErrorResponse(id, -32602, "missing 'title'");
+                if (content is null)
+                    return BuildErrorResponse(id, -32602, "missing 'content'");
+                var scope = args["scope"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(scope)) scope = ctx.ProjectName;
+                if (string.IsNullOrEmpty(scope))
+                    return BuildErrorResponse(id, -32602, "missing 'scope' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var result = await _backend.AddKnowledgeDocumentAsync(scope, title, content);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.KnowledgeDocumentResult)));
+            }
             default:
                 return BuildErrorResponse(id, -32601, $"Unknown tool: {name}");
         }

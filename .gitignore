@@ -51,6 +51,10 @@ logs/
 # The rest below is ephemeral / per-machine / personal.
 .firepit/inbox/
 .firepit/runs/
+# Derived knowledge index (M9) — rebuilt from .firepit/knowledge/*.md anytime.
+.firepit/knowledge.db
+.firepit/knowledge.db-wal
+.firepit/knowledge.db-shm
 .claude/*.lock
 .claude/agent-memory/
 

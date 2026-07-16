@@ -88,6 +88,33 @@ public sealed record AddCommandSpec(
     bool? KeepOpenOnError = null,
     string? Group = null);
 
+/// <summary>One knowledge search hit. <see cref="Scope"/> is the scope name
+/// ("global" or a project name) — pass it back to firepit_knowledge_get
+/// together with <see cref="Path"/> to read the full document.</summary>
+public sealed record KnowledgeHitInfo(
+    string Scope,
+    string Path,
+    string Title,
+    string? Heading,
+    string Snippet,
+    double Score);
+
+public sealed record KnowledgeSearchResult(
+    bool Ok,
+    string? Message,
+    IReadOnlyList<KnowledgeHitInfo> Hits,
+    bool Degraded);
+
+/// <summary>Result of firepit_knowledge_get / firepit_knowledge_add. On
+/// success carries the document; on failure only Ok=false + Message.</summary>
+public sealed record KnowledgeDocumentResult(
+    bool Ok,
+    string? Message,
+    string? Scope = null,
+    string? Path = null,
+    string? Title = null,
+    string? Content = null);
+
 // Resource definition returned by resources/list. Tool definitions live as
 // internal records next to the catalog (McpToolDefinitionRaw) — they carry
 // the inline JSON schema string rather than a parsed JsonElement.

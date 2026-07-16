@@ -53,4 +53,18 @@ public interface IMcpBackend
     /// if the name doesn't exist, returns Ok with a "not found" message. Same
     /// hot-reload path as Add.</summary>
     Task<ToolCallResult>              RemoveProjectCommandAsync(string projectName, string commandName);
+
+    /// <summary>Hybrid knowledge search. <paramref name="projectScopeName"/> is the
+    /// resolved calling/target project name (null when unknown); <paramref name="scope"/>
+    /// is "project" | "global" | "both". Never touches UI state — no dispatcher hop.</summary>
+    Task<KnowledgeSearchResult>       SearchKnowledgeAsync(string? projectScopeName, string scope,
+                                                           string query, int limit);
+
+    /// <summary>Read one knowledge document by scope name (as carried in search
+    /// hits: "global" or a project name) + relative path.</summary>
+    Task<KnowledgeDocumentResult>     GetKnowledgeDocumentAsync(string scopeName, string path);
+
+    /// <summary>Write a new markdown document into the scope's
+    /// .firepit/knowledge/ folder and index it before returning.</summary>
+    Task<KnowledgeDocumentResult>     AddKnowledgeDocumentAsync(string scopeName, string title, string content);
 }
