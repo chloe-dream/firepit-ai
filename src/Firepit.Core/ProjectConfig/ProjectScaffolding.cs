@@ -37,11 +37,14 @@ public static class ProjectScaffolding
     // The shared-vs-local split — see docs/ARCHITECTURE.md §9. Tracked: the
     // declarative, shareable config (no plaintext secrets — only ${cred:...}
     // references resolved via Windows Credential Manager). Ignored below: the
-    // ephemeral / per-machine / personal runtime state.
-    private static readonly string[] GitignoreEntries =
+    // ephemeral / per-machine / personal runtime state. Public because the
+    // default blueprint (Firepit.Core.Blueprints) seeds its manifest from
+    // this same list — one source for the convention.
+    public static readonly string[] GitignoreEntries =
     {
         ".firepit/inbox/",
         ".firepit/runs/",
+        ".firepit/knowledge.db*",
         "!.firepit/config.json",
         ".claude/settings.local.json",
         ".claude/*.lock",
@@ -50,10 +53,6 @@ public static class ProjectScaffolding
 
     private const string GitignoreHeader =
         "# Firepit + Claude Code — shared config versioned, runtime/personal local";
-
-    // Idempotency marker for the CLAUDE.md inbox section. If the file already
-    // mentions the completion tool we assume the convention is documented.
-    private const string InboxConventionMarker = "firepit_inbox_complete";
 
     private static readonly string[] BlanketIgnorePatterns =
     {
@@ -85,8 +84,33 @@ public static class ProjectScaffolding
 
         var gitignoreUpdated = EnsureGitignoreBlock(projectPath);
         var claudeSeeded     = EnsureInboxConvention(projectPath);
+        // Knowledge conventions (M9) — same content the default blueprint
+        // carries, so fresh projects are blueprint-conformant from birth.
+        claudeSeeded |= EnsureClaudeMdSection(
+            projectPath,
+            Blueprints.FirepitBlueprintDefaults.KnowledgeSectionMarker,
+            Blueprints.FirepitBlueprintDefaults.KnowledgeSection);
+        EnsureKnowledgeReadme(projectPath);
         var blanket          = DetectBlanketIgnores(projectPath);
         return new ProjectScaffoldResult(configPath, true, gitignoreUpdated, claudeSeeded, blanket);
+    }
+
+    /// <summary>Seed <c>.firepit/knowledge/README.md</c> (the conventions
+    /// note) if missing. The README doubles as the reason the knowledge dir
+    /// survives in git — empty directories don't.</summary>
+    public static bool EnsureKnowledgeReadme(string projectPath)
+    {
+        var target = Path.Combine(
+            projectPath,
+            Blueprints.FirepitBlueprintDefaults.KnowledgeReadmePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(target))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, Blueprints.FirepitBlueprintDefaults.KnowledgeReadme);
+        return true;
     }
 
     /// <summary>
@@ -94,7 +118,14 @@ public static class ProjectScaffolding
     /// root <c>.gitignore</c>, under a single Firepit header. Returns true if
     /// the file was created or appended to; false if everything was present.
     /// </summary>
-    public static bool EnsureGitignoreBlock(string projectPath)
+    public static bool EnsureGitignoreBlock(string projectPath) =>
+        EnsureGitignoreBlock(projectPath, GitignoreEntries);
+
+    /// <summary>Which of <paramref name="entries"/> are absent from the
+    /// project's <c>.gitignore</c> (exact-line match, whitespace-trimmed).
+    /// Shared by the blueprint check so check and apply can't disagree.</summary>
+    public static IReadOnlyList<string> GetMissingGitignoreEntries(
+        string projectPath, IReadOnlyList<string> entries)
     {
         var gitignorePath = Path.Combine(projectPath, ".gitignore");
         var existing = File.Exists(gitignorePath) ? File.ReadAllText(gitignorePath) : null;
@@ -109,7 +140,17 @@ public static class ProjectScaffolding
             }
         }
 
-        var missing = GitignoreEntries.Where(e => !present.Contains(e)).ToList();
+        return entries.Where(e => !present.Contains(e)).ToList();
+    }
+
+    /// <summary>Generalised gitignore ensure used by blueprints — same
+    /// header, caller-supplied entry list.</summary>
+    public static bool EnsureGitignoreBlock(string projectPath, IReadOnlyList<string> entries)
+    {
+        var gitignorePath = Path.Combine(projectPath, ".gitignore");
+        var existing = File.Exists(gitignorePath) ? File.ReadAllText(gitignorePath) : null;
+
+        var missing = GetMissingGitignoreEntries(projectPath, entries);
         if (missing.Count == 0)
         {
             return false;
@@ -136,20 +177,26 @@ public static class ProjectScaffolding
     /// creating a minimal CLAUDE.md if there is none). Idempotent via a marker.
     /// Returns true if CLAUDE.md was created or appended to.
     /// </summary>
-    public static bool EnsureInboxConvention(string projectPath)
+    public static bool EnsureInboxConvention(string projectPath) =>
+        EnsureClaudeMdSection(
+            projectPath,
+            Blueprints.FirepitBlueprintDefaults.InboxSectionMarker,
+            Blueprints.FirepitBlueprintDefaults.InboxSection);
+
+    /// <summary>
+    /// Generalised CLAUDE.md section ensure used by blueprints: append
+    /// <paramref name="section"/> when <paramref name="marker"/> is absent
+    /// (creating a minimal CLAUDE.md if there is none). Never rewrites an
+    /// existing section — the marker's presence is the whole contract.
+    /// </summary>
+    public static bool EnsureClaudeMdSection(string projectPath, string marker, string section)
     {
         var claudeMdPath = Path.Combine(projectPath, "CLAUDE.md");
-        var section =
-            "## Firepit inbox\n\n" +
-            "At the start of a session, read any pending messages in " +
-            "`.firepit/inbox/*.md` — cross-project notes Firepit routes here. " +
-            "Act on each, then mark it done with the `firepit_inbox_complete` " +
-            "MCP tool, passing the message's filename as the `id`.\n";
 
         if (File.Exists(claudeMdPath))
         {
             var content = File.ReadAllText(claudeMdPath);
-            if (content.Contains(InboxConventionMarker, StringComparison.Ordinal))
+            if (content.Contains(marker, StringComparison.Ordinal))
             {
                 return false;
             }

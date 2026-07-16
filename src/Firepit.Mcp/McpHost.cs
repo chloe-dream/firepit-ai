@@ -409,6 +409,30 @@ public sealed class McpHost : IDisposable
                 var result = await _backend.AddKnowledgeDocumentAsync(scope, title, content);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.KnowledgeDocumentResult)));
             }
+            case "firepit_blueprint_list":
+            {
+                var result = await _backend.ListBlueprintsAsync();
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.BlueprintListResult)));
+            }
+            case "firepit_blueprint_check":
+            {
+                var project   = args["projectName"]?.GetValue<string>();
+                var blueprint = args["blueprint"]?.GetValue<string?>() ?? "firepit";
+                var result = await _backend.CheckBlueprintAsync(
+                    string.IsNullOrEmpty(project) ? null : project, blueprint);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.BlueprintCheckResult)));
+            }
+            case "firepit_blueprint_apply":
+            {
+                var project   = args["projectName"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(project)) project = ctx.ProjectName;
+                if (string.IsNullOrEmpty(project))
+                    return BuildErrorResponse(id, -32602, "missing 'projectName' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var blueprint = args["blueprint"]?.GetValue<string?>() ?? "firepit";
+                var fix       = args["fixBlanketIgnores"]?.GetValue<bool?>() ?? false;
+                var result = await _backend.ApplyBlueprintAsync(project, blueprint, fix);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.BlueprintApplyResult)));
+            }
             default:
                 return BuildErrorResponse(id, -32601, $"Unknown tool: {name}");
         }

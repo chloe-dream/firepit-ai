@@ -67,4 +67,16 @@ public interface IMcpBackend
     /// <summary>Write a new markdown document into the scope's
     /// .firepit/knowledge/ folder and index it before returning.</summary>
     Task<KnowledgeDocumentResult>     AddKnowledgeDocumentAsync(string scopeName, string title, string content);
+
+    /// <summary>List blueprints from the meta project (seeding the built-in
+    /// default first). File-only work — no dispatcher state touched beyond a
+    /// settings snapshot.</summary>
+    Task<BlueprintListResult>         ListBlueprintsAsync();
+
+    /// <summary>Conformance check; null projectName sweeps all projects.</summary>
+    Task<BlueprintCheckResult>        CheckBlueprintAsync(string? projectName, string blueprintName);
+
+    /// <summary>Idempotent apply of a blueprint to one project.</summary>
+    Task<BlueprintApplyResult>        ApplyBlueprintAsync(string projectName, string blueprintName,
+                                                          bool fixBlanketIgnores);
 }

@@ -409,8 +409,11 @@ local agent — end-to-end working without any cloud network call.
 
 ## M9 — Project Knowledge & Blueprints (Design Locked 2026-07-16)
 
-> **Status:** the knowledge half (engine port, `Firepit.Knowledge`, indexing,
-> MCP tools) shipped 2026-07-16. Blueprints are still open.
+> **Status:** shipped 2026-07-16 — both halves. Knowledge: engine port,
+> `Firepit.Knowledge`, indexing, MCP tools. Blueprints: data-driven manifests
+> under `{metaProject}/blueprints/` (built-in `firepit` blueprint seeded on
+> first use), idempotent check/apply via `firepit_blueprint_*` MCP tools,
+> fresh scaffolds are blueprint-conformant from birth (tested invariant).
 
 Give every Firepit project a searchable, git-versioned knowledge base
 (research notes, background docs, decisions) plus a general knowledge
@@ -475,6 +478,19 @@ different starting states. The `.firepit` root helper agent checks
 projects for blueprint conformance. The Firepit blueprint owns the
 `.firepit/` layout including `knowledge/` and the `knowledge.db`
 gitignore line.
+
+As built: blueprints are **data, not code** — a folder under
+`{metaProject}/blueprints/{name}/` holding `blueprint.json` (gitignore
+lines, CLAUDE.md marker+section pairs, ensureProjectConfig flag) plus a
+`files/` tree copied file-by-file where missing. Firepit seeds the
+built-in `firepit` blueprint from the same constants the fresh-project
+scaffold uses (`FirepitBlueprintDefaults`), then disk is the single
+source of truth — the helper agent can edit or add blueprints without a
+Firepit release, and they version with the meta project's private repo.
+MCP surface: `firepit_blueprint_list` / `firepit_blueprint_check`
+(omit project → sweep all) / `firepit_blueprint_apply`. Blanket
+`.firepit//.claude/` ignores are reported as warnings; fixing them
+rewrites user content and therefore requires `fixBlanketIgnores=true`.
 
 **Out of scope for M9:** template DSL, migration chains, blueprint
 version lineages, cloud sync of knowledge, embedding models beyond the

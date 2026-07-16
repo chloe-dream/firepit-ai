@@ -115,6 +115,43 @@ public sealed record KnowledgeDocumentResult(
     string? Title = null,
     string? Content = null);
 
+/// <summary>One blueprint as exposed by firepit_blueprint_list.</summary>
+public sealed record BlueprintInfo(
+    string Name,
+    string Description,
+    IReadOnlyList<string> Files,
+    IReadOnlyList<string> GitignoreLines,
+    IReadOnlyList<string> ClaudeMdMarkers,
+    bool EnsuresProjectConfig);
+
+public sealed record BlueprintListResult(
+    bool Ok,
+    string? Message,
+    IReadOnlyList<BlueprintInfo> Blueprints);
+
+/// <summary>Conformance of one project: <see cref="Pending"/> lists the
+/// actions an apply would take (empty = conformant); <see cref="Warnings"/>
+/// carries blanket-ignore findings that apply won't touch unfixed.</summary>
+public sealed record BlueprintProjectCheck(
+    string Project,
+    bool Conformant,
+    IReadOnlyList<string> Pending,
+    IReadOnlyList<string> Warnings);
+
+public sealed record BlueprintCheckResult(
+    bool Ok,
+    string? Message,
+    string? Blueprint,
+    IReadOnlyList<BlueprintProjectCheck> Projects);
+
+public sealed record BlueprintApplyResult(
+    bool Ok,
+    string? Message,
+    string? Project = null,
+    string? Blueprint = null,
+    IReadOnlyList<string>? Actions = null,
+    IReadOnlyList<string>? Warnings = null);
+
 // Resource definition returned by resources/list. Tool definitions live as
 // internal records next to the catalog (McpToolDefinitionRaw) — they carry
 // the inline JSON schema string rather than a parsed JsonElement.

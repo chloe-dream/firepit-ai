@@ -223,6 +223,49 @@ internal static class McpToolDefinitions
             }
             """),
 
+        new("firepit_blueprint_list",
+            "List the available project blueprints (folders under the .firepit meta project's " +
+            "blueprints/ directory). A blueprint is a declarative 'this must exist' manifest: " +
+            "files to seed, .gitignore lines, CLAUDE.md sections. The built-in 'firepit' " +
+            "blueprint is seeded on first use and can be edited on disk afterwards.",
+            """
+            { "type": "object", "properties": {}, "additionalProperties": false }
+            """),
+
+        new("firepit_blueprint_check",
+            "Check project(s) for blueprint conformance without changing anything. Returns per " +
+            "project the pending actions an apply would take (empty = conformant) plus warnings " +
+            "(e.g. blanket .firepit//.claude/ gitignore lines that hide shared config). Omit " +
+            "projectName to sweep every known project — the maintenance view for the .firepit " +
+            "helper agent.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "projectName": { "type": "string", "description": "Project to check; omit to check all projects." },
+                "blueprint":   { "type": "string", "description": "Blueprint name.", "default": "firepit" }
+              },
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_blueprint_apply",
+            "Apply a blueprint to one project — the single idempotent operation: whatever is " +
+            "missing gets created, whatever exists is never touched. 'New project' and " +
+            "'modernise an old project' are this same call. Blanket gitignore fixes rewrite " +
+            "user content, so they only happen with fixBlanketIgnores=true.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "projectName":       { "type": "string", "description": "Project to apply to; omit for the caller's own project." },
+                "blueprint":         { "type": "string", "description": "Blueprint name.", "default": "firepit" },
+                "fixBlanketIgnores": { "type": "boolean", "description": "Also comment out blanket .firepit//.claude/ ignore lines.", "default": false }
+              },
+              "additionalProperties": false
+            }
+            """),
+
         new("firepit_knowledge_add",
             "Save a new knowledge document as markdown under <scope>/.firepit/knowledge/ and index " +
             "it immediately. Write knowledge in English (indexing convention). Use 'global' for " +
