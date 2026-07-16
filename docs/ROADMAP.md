@@ -407,6 +407,82 @@ local agent — end-to-end working without any cloud network call.
 
 ---
 
+## M9 — Project Knowledge & Blueprints (Deferred, Design Locked 2026-07-16)
+
+Give every Firepit project a searchable, git-versioned knowledge base
+(research notes, background docs, decisions) plus a general knowledge
+base shared across all projects — and introduce **blueprints** so new
+and existing projects converge on the same `.firepit/` conventions.
+
+Lesson learned from *the-fishbowl*: knowledge stored on a server is
+detached from the project it belongs to. Principle here: **knowledge =
+Markdown in the repo (committed); index = derived cache (gitignored,
+regenerable at any time).**
+
+**Two scopes, one mechanism:**
+
+| Scope | Knowledge (MD, committed, English) | Index (gitignored) |
+|---|---|---|
+| Project | `{repo}/.firepit/knowledge/*.md` | `{repo}/.firepit/knowledge.db` |
+| Global | `{projectsRoot}/.firepit/knowledge/*.md` | same folder, gitignored |
+
+The global scope is simply the `.firepit` root helper project's own
+project knowledge — no special case in code. That project is mirrored
+to a private repo ([chloe-dream/.firepit](https://github.com/chloe-dream/.firepit))
+so general knowledge (e.g. C# know-how) is versioned like everything else.
+
+**Engine — ported (copied, not referenced) from the-fishbowl,** which
+already ships a tested .NET 10 implementation:
+
+- `Fishbowl.Search`: MiniLM-L6-v2 embeddings via ONNX Runtime +
+  ML.Tokenizers; `ModelDownloader` fetches the ~90 MB model in the
+  background on first run; until ready, search degrades to FTS-only.
+- `HybridSearchService`: sqlite-vec (semantic) + FTS5 bm25 (lexical),
+  70/30 blend, min-max normalised, graceful degraded mode.
+
+Port target: a new self-contained **`Firepit.Knowledge`** project — no
+references to other Firepit projects (BCL + NuGets only), so a later
+extraction into a shared library is a move, not a refactor. New
+dependencies: `Microsoft.Data.Sqlite`, `sqlite-vec`, `Dapper`,
+`Microsoft.ML.OnnxRuntime`, `Microsoft.ML.Tokenizers`.
+
+**Indexing:** FileSystemWatcher on `knowledge/` per open project +
+content-hash manifest → only changed files are re-embedded.
+
+**MCP surface:** the existing Firepit MCP server gains
+`knowledge_search` / `knowledge_get` / `knowledge_add`, each with a
+`scope` parameter (`project` | `global` | `both`, default `both`).
+Deliberate consequence: knowledge search works only while Firepit runs.
+
+**Knowledge language convention:** English. MiniLM-L6-v2 is
+English-centric, agents query in English, and a uniform corpus helps
+both FTS and vectors. The model stays swappable (e.g.
+multilingual-e5-small) if this proves limiting.
+
+**Blueprints (kept deliberately small):** a blueprint is a declarative
+manifest — "these folders, these files, these gitignore lines, this
+CLAUDE.md section must exist" — with exactly one operation:
+**idempotent apply** (missing → created, present → untouched). "New
+Project" and "modernise an older project" are the same operation on
+different starting states. The `.firepit` root helper agent checks
+projects for blueprint conformance. The Firepit blueprint owns the
+`.firepit/` layout including `knowledge/` and the `knowledge.db`
+gitignore line.
+
+**Out of scope for M9:** template DSL, migration chains, blueprint
+version lineages, cloud sync of knowledge, embedding models beyond the
+single default, a knowledge-editor UI (Markdown files are edited like
+any other file).
+
+**Acceptance criteria:** a project with `.firepit/knowledge/*.md` gets
+indexed automatically while open in Firepit; `knowledge_search` returns
+blended results from project + global scope; deleting `knowledge.db`
+and reopening the project rebuilds the index from the MD files alone;
+applying the Firepit blueprint to a bare repo and to an
+already-conforming repo both succeed (second run is a no-op).
+
+---
+
 ## V2 (Reference, Not Committed)
 
 Listed in dependency order so M2-onwards can leave hooks where helpful, not so V2 starts before V1 is done:
@@ -423,4 +499,4 @@ V3 (image AI) is deliberately not detailed here. It will get its own roadmap whe
 
 ---
 
-*Document version: 0.2 — adds quick-links to M4, splits configuration foundation (M5) from MCP registry (M6), promotes project sub-tabs to top of V2*
+*Document version: 0.3 — adds M9 (project knowledge & blueprints, engine ported from the-fishbowl)*
