@@ -12,8 +12,9 @@ namespace Firepit.Views;
 
 /// <summary>
 /// Wizard-style inbox browser. Shows one message at a time with Prev/Next,
-/// plus three actions: Send to Claude (pastes body + prompt into the active
-/// PTY), Mark done (moves the file to <c>.firepit/inbox/processed/</c>) and
+/// plus three actions: Send to Claude (sends a one-line file-reference prompt
+/// into the active PTY — the agent reads the message file itself),
+/// Mark done (moves the file to <c>.firepit/inbox/processed/</c>) and
 /// Delete (removes the file outright, with a confirm). All three auto-advance
 /// to the next message; the window closes when the queue runs dry.
 ///
@@ -202,14 +203,15 @@ public partial class InboxWindow : Window
         if (_messages.Count == 0) return;
         var msg = _messages[_index];
 
-        // Build a short, deterministic prompt that quotes the message so Claude
-        // sees the same body the user is staring at. Match firepit_inbox_list's
-        // mental model — Claude can call firepit_inbox_complete with the id
-        // when it's done acting on the message.
+        // Send a file REFERENCE, not the body: long multi-line pastes through
+        // the PTY arrive truncated/mangled in the agent's prompt (observed in
+        // the field — only the tail survived). The message file is already on
+        // disk in the project the session runs in, so a one-line pointer is
+        // lossless and the agent reads the full frontmatter+body itself.
         var prompt =
-            $"Inbox message from {msg.From ?? "(unknown)"} — \"{msg.Subject ?? "(no subject)"}\":\n\n" +
-            $"{msg.Body}\n\n" +
-            $"Please act on this. When you're done, call firepit_inbox_complete with id=\"{msg.Id}\".";
+            $"Inbox message from {msg.From ?? "(unknown)"} — \"{msg.Subject ?? "(no subject)"}\". " +
+            $"Read .firepit/inbox/{msg.Id} in full, act on it, then call " +
+            $"firepit_inbox_complete with id=\"{msg.Id}\".";
 
         try { _sendToPty(prompt); }
         catch (Exception ex)
