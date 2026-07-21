@@ -115,6 +115,17 @@ public sealed record KnowledgeDocumentResult(
     string? Title = null,
     string? Content = null);
 
+/// <summary>Result of firepit_create_project. <see cref="AlreadyRegistered"/>
+/// marks the idempotent path: the folder was known before the call.</summary>
+public sealed record CreateProjectResult(
+    bool Ok,
+    string? Message,
+    string? Name = null,
+    string? Path = null,
+    bool AlreadyRegistered = false,
+    IReadOnlyList<string>? BlueprintActions = null,
+    IReadOnlyList<string>? Warnings = null);
+
 /// <summary>One blueprint as exposed by firepit_blueprint_list.</summary>
 public sealed record BlueprintInfo(
     string Name,

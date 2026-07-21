@@ -44,6 +44,119 @@ public partial class MainWindow : IMcpBackend
             }).ToArray();
         });
 
+    public Task<CreateProjectResult> CreateProjectAsync(string name, string? path, bool applyBlueprint) =>
+        OnDispatcherAsync(() =>
+        {
+            try
+            {
+                name = name.Trim();
+                if (name.Length == 0)
+                    return new CreateProjectResult(false, "Project name is empty.");
+                if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    return new CreateProjectResult(false,
+                        "Project name contains characters not allowed in a folder name.");
+
+                var root = _settings.ProjectsRoot;
+                var resolved = Path.GetFullPath(string.IsNullOrWhiteSpace(path)
+                    ? Path.Combine(root, name)
+                    : Path.IsPathRooted(path) ? path : Path.Combine(root, path));
+
+                var byPath = _allProjects.FirstOrDefault(p => string.Equals(
+                    Path.GetFullPath(p.Path), resolved, StringComparison.OrdinalIgnoreCase));
+                var byName = FindProjectByName(name);
+                if (byPath is null && byName is not null)
+                {
+                    return new CreateProjectResult(false,
+                        $"A project named '{byName.Name}' already exists at {byName.Path} — " +
+                        "pick another name or pass that path explicitly.");
+                }
+
+                var alreadyRegistered = byPath is not null;
+                Directory.CreateDirectory(resolved);
+
+                var warnings = new List<string>();
+                IReadOnlyList<string>? actions = null;
+                if (applyBlueprint)
+                {
+                    // Same operation firepit_blueprint_apply runs — idempotent,
+                    // so re-running on an existing project is safe. Without a
+                    // meta project there is no blueprint catalogue; fall back
+                    // to the plain first-scaffold hardening (same conventions).
+                    var store = new Firepit.Core.Blueprints.BlueprintStore(root);
+                    Firepit.Core.Blueprints.Blueprint? blueprint = null;
+                    if (store.MetaProjectExists)
+                    {
+                        store.EnsureDefaults();
+                        blueprint = store.TryLoad(
+                            Firepit.Core.Blueprints.FirepitBlueprintDefaults.DefaultBlueprintName);
+                    }
+
+                    if (blueprint is not null)
+                    {
+                        var outcome = Firepit.Core.Blueprints.BlueprintApplier.Apply(
+                            blueprint, resolved, byPath?.Name ?? name);
+                        actions = outcome.Actions;
+                        warnings.AddRange(outcome.Warnings);
+                    }
+                    else
+                    {
+                        var scaffold = ProjectScaffolding.EnsureProjectScaffold(resolved, byPath?.Name ?? name);
+                        warnings.AddRange(scaffold.BlanketIgnores
+                            .Select(l => $"blanket ignore '{l}' hides shared config"));
+                    }
+                }
+
+                if (!alreadyRegistered)
+                {
+                    // Mirror the UI's "New project…" flow: a persisted manual
+                    // entry, so registration survives restarts and doesn't
+                    // depend on the folder qualifying for discovery.
+                    var entries = (_settings.Projects ?? []).ToList();
+                    entries.Add(new ProjectSettings(name, resolved));
+                    _settings = _settings with { Projects = entries };
+                    try
+                    {
+                        _settingsStore.Save(_settings);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "create_project: failed to persist settings.json");
+                        warnings.Add(
+                            "Could not save settings.json — the registration lives in memory " +
+                            "until the next successful settings save.");
+                    }
+                }
+
+                // Ends with SyncKnowledgeScopes, so the knowledge scope is
+                // live before this returns — knowledge_add works immediately.
+                ReloadProjectList();
+
+                var project = _allProjects.FirstOrDefault(p => string.Equals(
+                    Path.GetFullPath(p.Path), resolved, StringComparison.OrdinalIgnoreCase));
+                if (project is null)
+                {
+                    return new CreateProjectResult(false,
+                        $"Registered {resolved}, but it did not appear in the project list — see the log.");
+                }
+
+                Log.Information(
+                    "MCP create_project: '{Name}' at {Path} (alreadyRegistered={Already}, blueprint={Blueprint})",
+                    project.Name, project.Path, alreadyRegistered, applyBlueprint);
+                var message = alreadyRegistered
+                    ? $"'{project.Name}' was already registered" +
+                      (applyBlueprint ? " — blueprint re-applied (idempotent)." : " — nothing to do.")
+                    : $"Created and registered '{project.Name}'. firepit_open_tab starts a session when ready.";
+                return new CreateProjectResult(
+                    true, message, project.Name, project.Path, alreadyRegistered,
+                    actions, warnings.Count > 0 ? warnings : null);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "firepit_create_project failed");
+                return new CreateProjectResult(false, ex.Message);
+            }
+        });
+
     public Task<IReadOnlyList<SessionInfo>> ListSessionsAsync() =>
         OnDispatcherAsync(() =>
         {

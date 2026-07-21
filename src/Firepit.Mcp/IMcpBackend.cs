@@ -14,6 +14,12 @@ public interface IMcpBackend
     /// <summary>Effective settings as a JSON object string with secret values redacted.</summary>
     Task<string>                      GetRedactedSettingsAsync();
 
+    /// <summary>Create/register a project without a UI step or restart: ensure
+    /// the folder, register it (manual entry, mirroring the UI's "New
+    /// project…" flow), optionally apply the default blueprint, then reload
+    /// the project list so every other tool sees it immediately.</summary>
+    Task<CreateProjectResult>         CreateProjectAsync(string name, string? path, bool applyBlueprint);
+
     Task<ToolCallResult>              OpenTabAsync(string projectName, bool resume);
     Task<ToolCallResult>              FocusTabAsync(string projectName);
     Task<ToolCallResult>              CloseTabAsync(string projectName);

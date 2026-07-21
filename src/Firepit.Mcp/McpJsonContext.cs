@@ -23,6 +23,7 @@ namespace Firepit.Mcp;
 [JsonSerializable(typeof(IReadOnlyList<KnowledgeHitInfo>))]
 [JsonSerializable(typeof(KnowledgeSearchResult))]
 [JsonSerializable(typeof(KnowledgeDocumentResult))]
+[JsonSerializable(typeof(CreateProjectResult))]
 [JsonSerializable(typeof(BlueprintInfo))]
 [JsonSerializable(typeof(IReadOnlyList<BlueprintInfo>))]
 [JsonSerializable(typeof(BlueprintListResult))]

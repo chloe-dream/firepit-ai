@@ -15,6 +15,29 @@ internal static class McpToolDefinitions
             { "type": "object", "properties": {}, "additionalProperties": false }
             """),
 
+        new("firepit_create_project",
+            "Create/register a project with Firepit — the agent-driven 'new project' flow, no UI " +
+            "step, no restart. Ensures the folder exists (default {projectsRoot}/{name} when path " +
+            "is omitted), registers it in the project list immediately, and by default applies the " +
+            "'firepit' blueprint so .firepit/config.json, git hygiene and the CLAUDE.md " +
+            "conventions are scaffolded in the same call (falls back to the plain first-scaffold " +
+            "hardening when no .firepit meta project exists). Right after this returns, " +
+            "firepit_open_tab / firepit_knowledge_add {scope} / firepit_blueprint_* all work " +
+            "against the new project. Idempotent: an already-registered path returns ok with a " +
+            "note (and still re-applies the blueprint when requested).",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "name":           { "type": "string", "description": "Project name — also the folder name under the projects root when 'path' is omitted." },
+                "path":           { "type": "string", "description": "Folder to register; absolute, or relative to the projects root. Created if missing. Omit for {projectsRoot}/{name}." },
+                "applyBlueprint": { "type": "boolean", "description": "Scaffold .firepit/, gitignore and CLAUDE.md conventions in the same call.", "default": true }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            }
+            """),
+
         new("firepit_open_tab",
             "Open a tab for a project (or focus the existing one if it's already open). " +
             "Optionally pass resume=true to launch with --continue.",

@@ -248,6 +248,17 @@ public sealed class McpHost : IDisposable
                 var projects = await _backend.ListProjectsAsync();
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(projects, McpJsonContext.Default.IReadOnlyListProjectInfo)));
             }
+            case "firepit_create_project":
+            {
+                var newName = args["name"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(newName))
+                    return BuildErrorResponse(id, -32602, "missing 'name'");
+                var newPath = args["path"]?.GetValue<string>();
+                var applyBlueprint = args["applyBlueprint"]?.GetValue<bool?>() ?? true;
+                var result = await _backend.CreateProjectAsync(
+                    newName.Trim(), string.IsNullOrWhiteSpace(newPath) ? null : newPath, applyBlueprint);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.CreateProjectResult)));
+            }
             case "firepit_open_tab":
             {
                 var project = args["projectName"]?.GetValue<string>();
