@@ -38,6 +38,34 @@ internal static class McpToolDefinitions
             }
             """),
 
+        new("firepit_rename_project",
+            "Rename a project — the whole cascade in one call, no app restart: Firepit releases " +
+            "its own handles on the folder (knowledge watcher + index connection pool), renames " +
+            "the folder (for projects directly under the projects root; registered folders " +
+            "elsewhere only change their display name), migrates the Claude Code history key " +
+            "under ~/.claude/projects so chat history and auto-memory don't orphan, updates " +
+            ".firepit/config.json id plus the settings.json registry entry, and reloads the " +
+            "project list. The project's tab must be CLOSED first (firepit_close_tab) — the " +
+            "running agent process itself holds the folder as its working directory, which no " +
+            "one can rename around. If the history migration fails the folder rename is rolled " +
+            "back; later metadata steps degrade to warnings instead of rolling back a successful " +
+            "rename. Address the source by 'from' (name; empty string is valid) or by 'fromPath' " +
+            "when the name is blank or ambiguous.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "from":           { "type": "string", "description": "Current project name (may be the empty string). Ignored when fromPath is given." },
+                "fromPath":       { "type": "string", "description": "Current project path — alternative addressing for blank or ambiguous names." },
+                "to":             { "type": "string", "description": "New project name; also the new folder name when the folder is renamed." },
+                "renameFolder":   { "type": "boolean", "description": "Rename the folder itself. Applies to folders directly under the projects root; elsewhere only the registered name changes.", "default": true },
+                "migrateHistory": { "type": "boolean", "description": "Move ~/.claude/projects/<old-key> to the new key so history + auto-memory survive.", "default": true }
+              },
+              "required": ["to"],
+              "additionalProperties": false
+            }
+            """),
+
         new("firepit_open_tab",
             "Open a tab for a project (or focus the existing one if it's already open). " +
             "Optionally pass resume=true to launch with --continue.",

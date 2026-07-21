@@ -126,6 +126,17 @@ public sealed record CreateProjectResult(
     IReadOnlyList<string>? BlueprintActions = null,
     IReadOnlyList<string>? Warnings = null);
 
+/// <summary>Result of firepit_rename_project. <see cref="Name"/>/<see cref="Path"/>
+/// are the project's final identity after the cascade.</summary>
+public sealed record RenameProjectResult(
+    bool Ok,
+    string? Message,
+    string? Name = null,
+    string? Path = null,
+    bool FolderRenamed = false,
+    bool HistoryMigrated = false,
+    IReadOnlyList<string>? Warnings = null);
+
 /// <summary>One blueprint as exposed by firepit_blueprint_list.</summary>
 public sealed record BlueprintInfo(
     string Name,

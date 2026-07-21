@@ -20,6 +20,14 @@ public interface IMcpBackend
     /// the project list so every other tool sees it immediately.</summary>
     Task<CreateProjectResult>         CreateProjectAsync(string name, string? path, bool applyBlueprint);
 
+    /// <summary>Atomic rename cascade: release Firepit's folder handles,
+    /// rename the folder (under the projects root), migrate the Claude Code
+    /// history key, update config id + settings entry, reload. Requires the
+    /// project's tab to be closed. Source addressed by name (empty string
+    /// allowed) or path.</summary>
+    Task<RenameProjectResult>         RenameProjectAsync(string? from, string? fromPath, string to,
+                                                         bool renameFolder, bool migrateHistory);
+
     Task<ToolCallResult>              OpenTabAsync(string projectName, bool resume);
     Task<ToolCallResult>              FocusTabAsync(string projectName);
     Task<ToolCallResult>              CloseTabAsync(string projectName);

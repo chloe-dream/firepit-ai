@@ -259,6 +259,22 @@ public sealed class McpHost : IDisposable
                     newName.Trim(), string.IsNullOrWhiteSpace(newPath) ? null : newPath, applyBlueprint);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.CreateProjectResult)));
             }
+            case "firepit_rename_project":
+            {
+                var to = args["to"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(to))
+                    return BuildErrorResponse(id, -32602, "missing 'to'");
+                var fromName = args["from"]?.GetValue<string>();
+                var fromPath = args["fromPath"]?.GetValue<string>();
+                if (fromName is null && string.IsNullOrWhiteSpace(fromPath))
+                    return BuildErrorResponse(id, -32602, "missing 'from' (or 'fromPath')");
+                var renameFolder   = args["renameFolder"]?.GetValue<bool?>() ?? true;
+                var migrateHistory = args["migrateHistory"]?.GetValue<bool?>() ?? true;
+                var result = await _backend.RenameProjectAsync(
+                    fromName, string.IsNullOrWhiteSpace(fromPath) ? null : fromPath,
+                    to.Trim(), renameFolder, migrateHistory);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.RenameProjectResult)));
+            }
             case "firepit_open_tab":
             {
                 var project = args["projectName"]?.GetValue<string>();
