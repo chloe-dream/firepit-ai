@@ -406,8 +406,38 @@ public sealed class McpHost : IDisposable
                 if (string.IsNullOrEmpty(scope)) scope = ctx.ProjectName;
                 if (string.IsNullOrEmpty(scope))
                     return BuildErrorResponse(id, -32602, "missing 'scope' (and caller did not supply FIREPIT_PROJECT_NAME)");
-                var result = await _backend.AddKnowledgeDocumentAsync(scope, title, content);
+                var pinned = args["pinned"]?.GetValue<bool?>() ?? false;
+                var result = await _backend.AddKnowledgeDocumentAsync(scope, title, content, pinned);
                 return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.KnowledgeDocumentResult)));
+            }
+            case "firepit_knowledge_update":
+            {
+                var path    = args["path"]?.GetValue<string>();
+                var content = args["content"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(path))
+                    return BuildErrorResponse(id, -32602, "missing 'path'");
+                if (content is null)
+                    return BuildErrorResponse(id, -32602, "missing 'content'");
+                var scope = args["scope"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(scope)) scope = ctx.ProjectName;
+                if (string.IsNullOrEmpty(scope))
+                    return BuildErrorResponse(id, -32602, "missing 'scope' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var title  = args["title"]?.GetValue<string>();
+                var pinned = args["pinned"]?.GetValue<bool?>();
+                var result = await _backend.UpdateKnowledgeDocumentAsync(scope, path, content, title, pinned);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.KnowledgeDocumentResult)));
+            }
+            case "firepit_knowledge_delete":
+            {
+                var path = args["path"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(path))
+                    return BuildErrorResponse(id, -32602, "missing 'path'");
+                var scope = args["scope"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(scope)) scope = ctx.ProjectName;
+                if (string.IsNullOrEmpty(scope))
+                    return BuildErrorResponse(id, -32602, "missing 'scope' (and caller did not supply FIREPIT_PROJECT_NAME)");
+                var result = await _backend.DeleteKnowledgeDocumentAsync(scope, path);
+                return BuildResult(id, BuildContentJson(JsonSerializer.Serialize(result, McpJsonContext.Default.ToolCallResult)));
             }
             case "firepit_blueprint_list":
             {

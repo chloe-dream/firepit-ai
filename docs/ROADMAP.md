@@ -504,6 +504,21 @@ and reopening the project rebuilds the index from the MD files alone;
 applying the Firepit blueprint to a bare repo and to an
 already-conforming repo both succeed (second run is a no-op).
 
+**M9 follow-up — memory backbone (shipped 2026-07-21, inbox request
+from just-play):** the knowledge store became a full memory layer.
+(1) *Mutable:* `firepit_knowledge_update` replaces a doc's content and
+re-indexes/re-embeds immediately; `firepit_knowledge_delete` removes
+file + chunks + vectors; external hand-edits were already covered by
+the `.firepit` file watcher. (2) *Pinned always-on tier:* docs with
+`pin: true` frontmatter (settable via the `pinned` flag on add/update)
+are compiled into a generated, committed
+`{project}/.firepit/knowledge-pinned.md`, and a third seed CLAUDE.md
+section imports it with `@.firepit/knowledge-pinned.md` — Claude Code
+loads imports at session start, so pinned docs are PUSHED into context
+with zero tool calls, while everything else stays the searchable pull
+tier. Digest is capped (10 docs / 12k chars, overflow listed by name).
+Blueprint + fresh scaffold seed the section and a placeholder digest.
+
 ---
 
 ## V2 (Reference, Not Committed)
@@ -522,4 +537,4 @@ V3 (image AI) is deliberately not detailed here. It will get its own roadmap whe
 
 ---
 
-*Document version: 0.3 — adds M9 (project knowledge & blueprints, engine ported from the-fishbowl)*
+*Document version: 0.4 — M9 follow-up: knowledge update/delete + pinned always-on tier (memory backbone)*

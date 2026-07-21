@@ -142,4 +142,87 @@ public sealed class KnowledgeServiceTests : IDisposable
         var hit = Assert.Single(result.Hits);
         Assert.Equal(KnowledgeService.GlobalScopeName, hit.Scope);
     }
+
+    [Fact]
+    public async Task UpdateDocument_ReplacesContent_OldPhrasingStopsMatching()
+    {
+        await _service.AddDocumentAsync(
+            "project-a", "Deploy target", "The deploy target is staging-seven.");
+
+        var updated = await _service.UpdateDocumentAsync(
+            "project-a", "deploy-target.md", "The deploy target is prod-two.");
+
+        Assert.NotNull(updated);
+        var doc = await _service.GetDocumentAsync("project-a", "deploy-target.md");
+        Assert.NotNull(doc);
+        Assert.Contains("prod-two", doc.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("staging-seven", doc.Content, StringComparison.Ordinal);
+
+        var newHits = await _service.SearchAsync("prod-two", ["project-a"], limit: 5);
+        Assert.Single(newHits.Hits);
+        var oldHits = await _service.SearchAsync("staging-seven", ["project-a"], limit: 5);
+        Assert.Empty(oldHits.Hits);
+    }
+
+    [Fact]
+    public async Task UpdateDocument_MissingOrTraversalPathReturnsNull()
+    {
+        Assert.Null(await _service.UpdateDocumentAsync("project-a", "nope.md", "content"));
+        Assert.Null(await _service.UpdateDocumentAsync("project-a", "../../evil.md", "content"));
+    }
+
+    [Fact]
+    public async Task DeleteDocument_RemovesFileAndSearchHits()
+    {
+        await _service.AddDocumentAsync("project-a", "Doomed doc", "Contains zanzibar facts.");
+
+        Assert.True(await _service.DeleteDocumentAsync("project-a", "doomed-doc.md"));
+
+        Assert.False(File.Exists(Path.Combine(_projectA, ".firepit", "knowledge", "doomed-doc.md")));
+        var result = await _service.SearchAsync("zanzibar", ["project-a"], limit: 5);
+        Assert.Empty(result.Hits);
+        // Second delete of the same doc: gone is gone.
+        Assert.False(await _service.DeleteDocumentAsync("project-a", "doomed-doc.md"));
+    }
+
+    [Fact]
+    public async Task AddDocument_Pinned_LandsInPinnedDigest()
+    {
+        await _service.AddDocumentAsync(
+            "project-a", "Reflex rule", "Always use they-them by default.", pinned: true);
+        await _service.AddDocumentAsync(
+            "project-a", "Plain fact", "The build takes four minutes.");
+
+        var file = Path.Combine(_projectA, ".firepit", "knowledge", "reflex-rule.md");
+        Assert.StartsWith("---\npin: true\n---", File.ReadAllText(file), StringComparison.Ordinal);
+
+        var digest = File.ReadAllText(Path.Combine(_projectA, ".firepit", "knowledge-pinned.md"));
+        Assert.Contains("Always use they-them", digest, StringComparison.Ordinal);
+        Assert.DoesNotContain("four minutes", digest, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UpdateDocument_KeepsPinUnlessToldOtherwise()
+    {
+        await _service.AddDocumentAsync(
+            "project-a", "Sticky rule", "Original reflex.", pinned: true);
+        var file = Path.Combine(_projectA, ".firepit", "knowledge", "sticky-rule.md");
+        var digestPath = Path.Combine(_projectA, ".firepit", "knowledge-pinned.md");
+
+        // Content update with no pin argument — pin survives.
+        await _service.UpdateDocumentAsync("project-a", "sticky-rule.md", "Corrected reflex.");
+        var text = File.ReadAllText(file);
+        Assert.StartsWith("---\npin: true\n---", text, StringComparison.Ordinal);
+        Assert.Contains("Corrected reflex.", text, StringComparison.Ordinal);
+        Assert.Contains("Corrected reflex.", File.ReadAllText(digestPath), StringComparison.Ordinal);
+
+        // Explicit unpin — frontmatter and digest entry disappear.
+        await _service.UpdateDocumentAsync(
+            "project-a", "sticky-rule.md", "Corrected reflex.", pinned: false);
+        text = File.ReadAllText(file);
+        Assert.DoesNotContain("pin: true", text, StringComparison.Ordinal);
+        var digest = File.ReadAllText(digestPath);
+        Assert.DoesNotContain("Corrected reflex.", digest, StringComparison.Ordinal);
+        Assert.Contains("No pinned documents yet", digest, StringComparison.Ordinal);
+    }
 }

@@ -62,6 +62,9 @@ public sealed class BlueprintStore
                 new BlueprintManifestSection(
                     FirepitBlueprintDefaults.KnowledgeSectionMarker,
                     FirepitBlueprintDefaults.KnowledgeSection),
+                new BlueprintManifestSection(
+                    FirepitBlueprintDefaults.PinnedSectionMarker,
+                    FirepitBlueprintDefaults.PinnedSection),
             ]);
 
         Directory.CreateDirectory(dir);
@@ -69,12 +72,20 @@ public sealed class BlueprintStore
             Path.Combine(dir, ManifestFileName),
             JsonSerializer.Serialize(manifest, BlueprintJsonContext.Default.BlueprintManifest));
 
-        var readmeSource = Path.Combine(
-            dir, FilesDirName,
-            FirepitBlueprintDefaults.KnowledgeReadmePath.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(readmeSource)!);
-        File.WriteAllText(readmeSource, FirepitBlueprintDefaults.KnowledgeReadme);
+        SeedFile(dir, FirepitBlueprintDefaults.KnowledgeReadmePath, FirepitBlueprintDefaults.KnowledgeReadme);
+        // Placeholder digest: apply copies it into projects that don't have
+        // one yet, so the CLAUDE.md @import resolves immediately; Firepit's
+        // knowledge service overwrites it with real pinned content.
+        SeedFile(dir, FirepitBlueprintDefaults.PinnedDigestPath, FirepitBlueprintDefaults.PinnedDigestSeed);
         return true;
+    }
+
+    private static void SeedFile(string blueprintDir, string relativePath, string content)
+    {
+        var target = Path.Combine(
+            blueprintDir, FilesDirName, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, content);
     }
 
     public IReadOnlyList<Blueprint> LoadAll()

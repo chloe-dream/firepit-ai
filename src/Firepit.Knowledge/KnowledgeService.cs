@@ -223,10 +223,12 @@ public sealed class KnowledgeService : IDisposable
     /// <summary>
     /// Writes a new knowledge document (slugged file name derived from the
     /// title) and indexes it before returning, so an immediately-following
-    /// search finds it.
+    /// search finds it. <paramref name="pinned"/> marks the doc `pin: true` —
+    /// the always-on tier compiled into <c>.firepit/knowledge-pinned.md</c>.
     /// </summary>
     public async Task<KnowledgeDocument> AddDocumentAsync(
-        string scopeName, string title, string content, CancellationToken ct = default)
+        string scopeName, string title, string content, bool pinned = false,
+        CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -250,6 +252,11 @@ public sealed class KnowledgeService : IDisposable
         var body = content.TrimStart().StartsWith("# ", StringComparison.Ordinal)
             ? content
             : $"# {title}\n\n{content}";
+        if (pinned)
+        {
+            body = PinnedFrontmatter.SetPinned(body, true);
+        }
+
         if (!body.EndsWith('\n'))
         {
             body += "\n";
@@ -270,6 +277,79 @@ public sealed class KnowledgeService : IDisposable
         await ReindexScopeAsync(scope, ct);
 
         return new KnowledgeDocument(scope.Name, fileName, title, body);
+    }
+
+    /// <summary>
+    /// Replaces an existing document's content in place and re-indexes it
+    /// (old chunks, FTS rows and vectors are dropped) before returning.
+    /// Null when the document doesn't exist. <paramref name="pinned"/>:
+    /// true/false toggles the `pin: true` frontmatter, null keeps the
+    /// document's current pin state.
+    /// </summary>
+    public async Task<KnowledgeDocument?> UpdateDocumentAsync(
+        string scopeName, string path, string content, string? title = null,
+        bool? pinned = null, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(content);
+        var scope = RequireScope(scopeName);
+
+        var full = ResolveInsideKnowledgeDir(scope, path);
+        if (full is null || !File.Exists(full))
+        {
+            return null;
+        }
+
+        var existing = await File.ReadAllTextAsync(full, ct);
+
+        var trimmed = content.TrimStart();
+        var body = title is not null &&
+                   !trimmed.StartsWith("# ", StringComparison.Ordinal) &&
+                   !trimmed.StartsWith("---", StringComparison.Ordinal)
+            ? $"# {title}\n\n{content}"
+            : content;
+
+        // Replace semantics for the CONTENT, preserve semantics for the pin:
+        // an update that doesn't mention pinning must not silently unpin.
+        var wantPinned = pinned ?? PinnedFrontmatter.IsPinned(existing);
+        if (wantPinned != PinnedFrontmatter.IsPinned(body))
+        {
+            body = PinnedFrontmatter.SetPinned(body, wantPinned);
+        }
+
+        if (!body.EndsWith('\n'))
+        {
+            body += "\n";
+        }
+
+        await File.WriteAllTextAsync(full, body, ct);
+        await ReindexScopeAsync(scope, ct);
+
+        var (resolvedTitle, _) = MarkdownChunker.Chunk(Path.GetFileName(full), body);
+        var rel = Path.GetRelativePath(scope.Store.KnowledgeDir, full).Replace('\\', '/');
+        return new KnowledgeDocument(scope.Name, rel, resolvedTitle, body);
+    }
+
+    /// <summary>
+    /// Deletes a document file and removes it from the index (chunks, FTS,
+    /// vectors — and the pinned digest, if it was pinned) before returning.
+    /// False when the document doesn't exist.
+    /// </summary>
+    public async Task<bool> DeleteDocumentAsync(
+        string scopeName, string path, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var scope = RequireScope(scopeName);
+
+        var full = ResolveInsideKnowledgeDir(scope, path);
+        if (full is null || !File.Exists(full))
+        {
+            return false;
+        }
+
+        File.Delete(full);
+        await ReindexScopeAsync(scope, ct);
+        return true;
     }
 
     private Scope CreateScope(KnowledgeScopeRegistration reg)
@@ -386,6 +466,18 @@ public sealed class KnowledgeService : IDisposable
                 _logger.LogInformation(
                     "Knowledge scope {Scope}: {Indexed} indexed, {Removed} removed, {Pending} awaiting embeddings",
                     scope.Name, stats.Indexed, stats.Removed, stats.PendingEmbedding);
+            }
+
+            // The always-on tier rides the same pass: any change to the
+            // markdown (tool call, hand edit, delete) refreshes the digest.
+            // It lives NEXT TO the knowledge dir, so it never indexes itself,
+            // and the watcher's knowledge-dir filter ignores the write.
+            var digestPath = Path.Combine(
+                Path.GetDirectoryName(scope.Store.KnowledgeDir)!, PinnedDigest.FileName);
+            if (PinnedDigest.Regenerate(scope.Store.KnowledgeDir, digestPath))
+            {
+                _logger.LogInformation(
+                    "Knowledge scope {Scope}: pinned digest updated", scope.Name);
             }
         }
         finally

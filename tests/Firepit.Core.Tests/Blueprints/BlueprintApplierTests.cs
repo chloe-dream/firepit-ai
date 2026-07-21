@@ -40,11 +40,13 @@ public sealed class BlueprintApplierTests : IDisposable
         Assert.NotEmpty(first.Actions);
         Assert.True(File.Exists(Path.Combine(_project, ".firepit", "config.json")));
         Assert.True(File.Exists(Path.Combine(_project, ".firepit", "knowledge", "README.md")));
+        Assert.True(File.Exists(Path.Combine(_project, ".firepit", "knowledge-pinned.md")));
         var gitignore = File.ReadAllText(Path.Combine(_project, ".gitignore"));
         Assert.Contains(".firepit/knowledge.db*", gitignore, StringComparison.Ordinal);
         var claudeMd = File.ReadAllText(Path.Combine(_project, "CLAUDE.md"));
         Assert.Contains("firepit_inbox_complete", claudeMd, StringComparison.Ordinal);
         Assert.Contains("firepit_knowledge_search", claudeMd, StringComparison.Ordinal);
+        Assert.Contains("@.firepit/knowledge-pinned.md", claudeMd, StringComparison.Ordinal);
 
         // Same operation, second run: nothing left to do.
         var second = BlueprintApplier.Apply(_blueprint, _project, "some-project");
@@ -60,8 +62,9 @@ public sealed class BlueprintApplierTests : IDisposable
         Assert.False(check.Conformant);
         Assert.True(check.MissingProjectConfig);
         Assert.Contains(".firepit/knowledge/README.md", check.MissingFiles);
+        Assert.Contains(".firepit/knowledge-pinned.md", check.MissingFiles);
         Assert.NotEmpty(check.MissingGitignoreLines);
-        Assert.Equal(2, check.MissingClaudeMdSections.Count);
+        Assert.Equal(3, check.MissingClaudeMdSections.Count);
         Assert.NotEmpty(check.DescribePending());
     }
 

@@ -187,7 +187,7 @@ public partial class MainWindow
     }
 
     public async Task<KnowledgeDocumentResult> AddKnowledgeDocumentAsync(
-        string scopeName, string title, string content)
+        string scopeName, string title, string content, bool pinned)
     {
         var svc = _knowledgeService;
         if (svc is null)
@@ -197,9 +197,12 @@ public partial class MainWindow
 
         try
         {
-            var doc = await svc.AddDocumentAsync(MapToScopeName(scopeName), title, content);
+            var doc = await svc.AddDocumentAsync(MapToScopeName(scopeName), title, content, pinned);
+            var message = pinned
+                ? "Saved, indexed and pinned (auto-injected at session start). Remember to commit the file."
+                : "Saved and indexed. Remember to commit the file.";
             return new KnowledgeDocumentResult(
-                true, "Saved and indexed. Remember to commit the file.", doc.Scope, doc.Path, doc.Title, doc.Content);
+                true, message, doc.Scope, doc.Path, doc.Title, doc.Content);
         }
         catch (ArgumentException ex)
         {
@@ -209,6 +212,63 @@ public partial class MainWindow
         {
             Log.Error(ex, "firepit_knowledge_add failed");
             return new KnowledgeDocumentResult(false, ex.Message);
+        }
+    }
+
+    public async Task<KnowledgeDocumentResult> UpdateKnowledgeDocumentAsync(
+        string scopeName, string path, string content, string? title, bool? pinned)
+    {
+        var svc = _knowledgeService;
+        if (svc is null)
+        {
+            return new KnowledgeDocumentResult(false, "Knowledge service is not running");
+        }
+
+        try
+        {
+            var doc = await svc.UpdateDocumentAsync(MapToScopeName(scopeName), path, content, title, pinned);
+            return doc is null
+                ? new KnowledgeDocumentResult(
+                    false,
+                    $"No document '{path}' in scope '{scopeName}' — use firepit_knowledge_add for new docs.")
+                : new KnowledgeDocumentResult(
+                    true, "Replaced and re-indexed. Remember to commit the change.",
+                    doc.Scope, doc.Path, doc.Title, doc.Content);
+        }
+        catch (ArgumentException ex)
+        {
+            return new KnowledgeDocumentResult(false, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "firepit_knowledge_update failed");
+            return new KnowledgeDocumentResult(false, ex.Message);
+        }
+    }
+
+    public async Task<ToolCallResult> DeleteKnowledgeDocumentAsync(string scopeName, string path)
+    {
+        var svc = _knowledgeService;
+        if (svc is null)
+        {
+            return new ToolCallResult(false, "Knowledge service is not running");
+        }
+
+        try
+        {
+            var deleted = await svc.DeleteDocumentAsync(MapToScopeName(scopeName), path);
+            return deleted
+                ? new ToolCallResult(true, "Deleted and removed from the index. Remember to commit the deletion.")
+                : new ToolCallResult(false, $"No document '{path}' in scope '{scopeName}'.");
+        }
+        catch (ArgumentException ex)
+        {
+            return new ToolCallResult(false, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "firepit_knowledge_delete failed");
+            return new ToolCallResult(false, ex.Message);
         }
     }
 }

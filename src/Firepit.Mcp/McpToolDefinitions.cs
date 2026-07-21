@@ -270,16 +270,58 @@ internal static class McpToolDefinitions
             "Save a new knowledge document as markdown under <scope>/.firepit/knowledge/ and index " +
             "it immediately. Write knowledge in English (indexing convention). Use 'global' for " +
             "cross-project knowledge (C# patterns, tooling lore); omit scope for the caller's own " +
-            "project. The file is plain markdown in the repo — commit it like any other file.",
+            "project. The file is plain markdown in the repo — commit it like any other file. " +
+            "To correct existing knowledge use firepit_knowledge_update instead of adding a " +
+            "near-duplicate — stale duplicates poison search.",
             """
             {
               "type": "object",
               "properties": {
                 "title":   { "type": "string", "description": "Document title; becomes the H1 and the slugged file name." },
                 "content": { "type": "string", "description": "Markdown body (English). A leading '# ' heading is kept as-is." },
-                "scope":   { "type": "string", "description": "'global' or a project name; omit for the caller's own project." }
+                "scope":   { "type": "string", "description": "'global' or a project name; omit for the caller's own project." },
+                "pinned":  { "type": "boolean", "description": "Mark pin: true — the doc is auto-injected into every session at start via .firepit/knowledge-pinned.md. Reserve for always-on reflex rules; keep the pinned set small.", "default": false }
               },
               "required": ["title", "content"],
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_knowledge_update",
+            "Replace an existing knowledge document's content in place and re-index/re-embed it " +
+            "immediately — the old phrasing stops matching, the new content becomes searchable. " +
+            "This is the memory-hygiene tool: correct or refresh a stale doc here instead of " +
+            "adding a duplicate. 'scope' + 'path' as carried by search hits. Hand-editing the " +
+            "markdown file directly is also fine — a file watcher re-indexes external changes " +
+            "automatically.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "path":    { "type": "string", "description": "Document path relative to the scope's knowledge folder (from a search hit)." },
+                "content": { "type": "string", "description": "New markdown body — replaces the entire document." },
+                "title":   { "type": "string", "description": "Optional new title; prepended as H1 when the content brings no heading." },
+                "scope":   { "type": "string", "description": "'global' or a project name; omit for the caller's own project." },
+                "pinned":  { "type": "boolean", "description": "true = pin (auto-inject at session start), false = unpin. Omit to keep the doc's current pin state." }
+              },
+              "required": ["path", "content"],
+              "additionalProperties": false
+            }
+            """),
+
+        new("firepit_knowledge_delete",
+            "Delete a knowledge document and remove it from the search index (chunks, full-text " +
+            "rows and vectors — and from the pinned digest if it was pinned). The file is under " +
+            "git, so the deletion shows up as a normal repo change. Deleting a missing doc " +
+            "returns ok=false with a note.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "path":  { "type": "string", "description": "Document path relative to the scope's knowledge folder (from a search hit)." },
+                "scope": { "type": "string", "description": "'global' or a project name; omit for the caller's own project." }
+              },
+              "required": ["path"],
               "additionalProperties": false
             }
             """),

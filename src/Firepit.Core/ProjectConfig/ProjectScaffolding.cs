@@ -90,7 +90,12 @@ public static class ProjectScaffolding
             projectPath,
             Blueprints.FirepitBlueprintDefaults.KnowledgeSectionMarker,
             Blueprints.FirepitBlueprintDefaults.KnowledgeSection);
+        claudeSeeded |= EnsureClaudeMdSection(
+            projectPath,
+            Blueprints.FirepitBlueprintDefaults.PinnedSectionMarker,
+            Blueprints.FirepitBlueprintDefaults.PinnedSection);
         EnsureKnowledgeReadme(projectPath);
+        EnsurePinnedDigestSeed(projectPath);
         var blanket          = DetectBlanketIgnores(projectPath);
         return new ProjectScaffoldResult(configPath, true, gitignoreUpdated, claudeSeeded, blanket);
     }
@@ -110,6 +115,25 @@ public static class ProjectScaffolding
 
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         File.WriteAllText(target, Blueprints.FirepitBlueprintDefaults.KnowledgeReadme);
+        return true;
+    }
+
+    /// <summary>Seed the placeholder pinned digest if missing, so the
+    /// CLAUDE.md <c>@.firepit/knowledge-pinned.md</c> import resolves before
+    /// Firepit's knowledge service runs its first index pass. The service
+    /// overwrites it with real pinned content from then on.</summary>
+    public static bool EnsurePinnedDigestSeed(string projectPath)
+    {
+        var target = Path.Combine(
+            projectPath,
+            Blueprints.FirepitBlueprintDefaults.PinnedDigestPath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(target))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, Blueprints.FirepitBlueprintDefaults.PinnedDigestSeed);
         return true;
     }
 

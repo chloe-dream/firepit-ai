@@ -65,8 +65,20 @@ public interface IMcpBackend
     Task<KnowledgeDocumentResult>     GetKnowledgeDocumentAsync(string scopeName, string path);
 
     /// <summary>Write a new markdown document into the scope's
-    /// .firepit/knowledge/ folder and index it before returning.</summary>
-    Task<KnowledgeDocumentResult>     AddKnowledgeDocumentAsync(string scopeName, string title, string content);
+    /// .firepit/knowledge/ folder and index it before returning. Pinned docs
+    /// get `pin: true` frontmatter and land in the always-on digest.</summary>
+    Task<KnowledgeDocumentResult>     AddKnowledgeDocumentAsync(string scopeName, string title,
+                                                               string content, bool pinned);
+
+    /// <summary>Replace an existing document's content and re-index it before
+    /// returning. Null pinned keeps the doc's current pin state.</summary>
+    Task<KnowledgeDocumentResult>     UpdateKnowledgeDocumentAsync(string scopeName, string path,
+                                                                  string content, string? title,
+                                                                  bool? pinned);
+
+    /// <summary>Delete a document file and drop it from the index. Missing
+    /// docs return Ok=false with a Message.</summary>
+    Task<ToolCallResult>              DeleteKnowledgeDocumentAsync(string scopeName, string path);
 
     /// <summary>List blueprints from the meta project (seeding the built-in
     /// default first). File-only work — no dispatcher state touched beyond a

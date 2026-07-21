@@ -35,6 +35,7 @@ public sealed class BlueprintStoreTests : IDisposable
         var dir = Path.Combine(_root, ".firepit", "blueprints", "firepit");
         Assert.True(File.Exists(Path.Combine(dir, "blueprint.json")));
         Assert.True(File.Exists(Path.Combine(dir, "files", ".firepit", "knowledge", "README.md")));
+        Assert.True(File.Exists(Path.Combine(dir, "files", ".firepit", "knowledge-pinned.md")));
     }
 
     [Fact]
@@ -58,9 +59,11 @@ public sealed class BlueprintStoreTests : IDisposable
         Assert.Equal("firepit", blueprint.Name);
         Assert.True(blueprint.EnsureProjectConfig);
         Assert.Equal(ProjectScaffolding.GitignoreEntries, blueprint.GitignoreLines);
-        Assert.Equal(2, blueprint.ClaudeMdSections.Count);
-        var file = Assert.Single(blueprint.Files);
-        Assert.Equal(".firepit/knowledge/README.md", file.RelativePath);
+        Assert.Equal(3, blueprint.ClaudeMdSections.Count);
+        Assert.Equal(2, blueprint.Files.Count);
+        var relPaths = blueprint.Files.Select(f => f.RelativePath).ToArray();
+        Assert.Contains(".firepit/knowledge/README.md", relPaths);
+        Assert.Contains(".firepit/knowledge-pinned.md", relPaths);
     }
 
     [Fact]
