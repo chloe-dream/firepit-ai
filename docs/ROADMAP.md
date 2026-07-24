@@ -532,6 +532,11 @@ Listed in dependency order so M2-onwards can leave hooks where helpful, not so V
 5. Embedded PowerShell (second pane, reuses ConPTY infrastructure)
 6. Session history dropdown (`--resume <id>` per adapter)
 7. Scrollback restoration (`xterm-addon-serialize`)
+8. **Cross-project auto-delivery (tab-to-tab push)** — remove the manual "Send to Claude" click so an inbox message is injected into the target tab on its own. Design (worked out 2026-07-23, from Chloe's Umbrella-Bot/Bumblebee use case):
+   - **Directional gate, keyed on which tab is focused.** Target is a *background worker* (not the focused tab) → deliver an "act on it" prompt; it just executes the dispatched task. Target is *Chloe's active/focused tab* → deliver a "present it and wait for her go" prompt; her active tab is the only human gate.
+   - **The circuit breaker is free:** everything that returns to her active tab is laid before her, so every chain closes at her. No separate loop-guard needed as long as the initiating trigger is always hers.
+   - **Mechanism reuses what exists:** same PTY-stdin injection path as "Send to Claude", just automated; two prompt flavors (execute vs. present-and-wait); deliver only to an **open + idle** tab (never mid-turn); the inbox stays the durable transport and the fallback when no tab is open or the target is busy. Stays transparent-host — the receiving *agent* does the asking, Firepit builds no confirmation dialog and parses no output.
+   - **One open edge for later:** worker-triggers-worker fan-out (a worker sending onward without routing through Chloe) is the only place a guard would eventually be wanted. First cut: a worker executes only the dispatched task and reports back — no further fan-out.
 
 V3 (image AI) is deliberately not detailed here. It will get its own roadmap when V2 is in active personal use.
 
